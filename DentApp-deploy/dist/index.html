@@ -1,0 +1,150 @@
+<!DOCTYPE html>
+<html lang="sk">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>DentApp CRM | DentAll</title>
+  <meta name="description" content="DentApp je interný CRM systém DentAll pre správu technikov, ambulancií, zariadení, skladu a servisných aktivít.">
+  <meta name="theme-color" content="#0e5f78">
+  <link rel="manifest" href="manifest.json">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <main class="login-screen" id="loginScreen">
+    <section class="login-panel">
+      <div class="brand-lockup">
+        <span class="brand-mark">D</span>
+        <div>
+          <strong>DentApp</strong>
+          <small>DentAll CRM</small>
+        </div>
+      </div>
+
+      <div class="login-copy">
+        <p class="eyebrow">Interný prístup</p>
+        <h1>Správa ambulancií, zariadení a servisných úloh na jednom mieste.</h1>
+      </div>
+
+      <div class="login-mode-switch" role="tablist" aria-label="Typ prístupu">
+        <button class="is-active" type="button" data-login-mode="internal">Interný prístup</button>
+        <button type="button" data-login-mode="portal">Klientsky portál</button>
+      </div>
+
+      <form class="login-form" id="loginForm">
+        <label>
+          <span>E-mail</span>
+          <input id="loginEmail" type="email" autocomplete="username" placeholder="meno@dentall.sk">
+        </label>
+        <label>
+          <span>Heslo</span>
+          <input id="loginPin" type="password" autocomplete="current-password" placeholder="Vaše heslo">
+        </label>
+        <button class="primary-action" type="submit">Prihlásiť sa</button>
+        <p class="form-note">Prihlásenie prebieha cez Supabase Auth a spoločnú online databázu.</p>
+      </form>
+
+      <form class="login-form is-hidden" id="portalLoginForm">
+        <label>
+          <span>Prístupový kód ambulancie</span>
+          <input id="portalCodeInput" type="text" autocomplete="one-time-code" placeholder="Napríklad DA-ABC123">
+        </label>
+        <button class="primary-action" type="submit">Otvoriť klientsky portál</button>
+        <p class="form-note">Kód nájdete v internom profile ambulancie. V online verzii ho nahradí bezpečný pozývací link alebo e-mailové prihlásenie.</p>
+      </form>
+    </section>
+
+    <aside class="login-preview" aria-label="Rýchly prehľad CRM">
+      <div class="preview-card">
+        <span>Klienti</span>
+        <strong data-login-clients>0</strong>
+        <small>ambulancie s vlastným profilom</small>
+      </div>
+      <div class="preview-card">
+        <span>Zariadenia</span>
+        <strong data-login-devices>0</strong>
+        <small>záruky, dokumenty, servis</small>
+      </div>
+      <div class="preview-card">
+        <span>Na kontrolu</span>
+        <strong data-login-risks>0</strong>
+        <small>zariadenia alebo skladové položky</small>
+      </div>
+    </aside>
+  </main>
+
+  <div class="app-shell is-hidden" id="appShell">
+    <aside class="sidebar">
+      <div class="brand-lockup">
+        <span class="brand-mark">D</span>
+        <div>
+          <strong>DentApp</strong>
+          <small>DentAll CRM</small>
+        </div>
+      </div>
+
+      <nav class="side-nav" aria-label="Hlavná navigácia">
+        <button class="nav-item is-active" type="button" data-view="dashboard">Prehľad</button>
+        <button class="nav-item" type="button" data-view="clients">Ambulancie</button>
+        <button class="nav-item" type="button" data-view="devices">Zariadenia</button>
+        <button class="nav-item" type="button" data-view="inventory">Sklad</button>
+        <button class="nav-item" type="button" data-view="service">Servis</button>
+        <button class="nav-item" type="button" data-view="documents">Dokumenty</button>
+        <button class="nav-item admin-only" type="button" data-view="admin">Administrácia</button>
+      </nav>
+
+      <div class="user-card">
+        <span id="activeRole">Technik</span>
+        <strong id="activeUser">Používateľ</strong>
+        <button class="ghost-action" id="changePasswordButton" type="button">Zmeniť heslo</button>
+        <button class="ghost-action" id="logoutButton" type="button">Odhlásiť</button>
+      </div>
+    </aside>
+
+    <section class="workspace">
+      <header class="topbar">
+        <button class="menu-button" id="menuButton" type="button" aria-label="Otvoriť menu">☰</button>
+        <div>
+          <p class="eyebrow" id="viewKicker">CRM</p>
+          <h2 id="viewTitle">Prehľad</h2>
+        </div>
+        <div class="topbar-actions">
+          <input id="globalSearch" type="search" placeholder="Hľadať ambulanciu, zariadenie, SN...">
+          <button class="secondary-action" id="serialSearchButton" type="button">SN</button>
+        </div>
+      </header>
+
+      <div class="content" id="content"></div>
+    </section>
+  </div>
+
+  <main class="client-portal-shell is-hidden" id="clientPortalShell">
+    <header class="portal-topbar">
+      <div class="brand-lockup">
+        <span class="brand-mark">D</span>
+        <div>
+          <strong>DentApp</strong>
+          <small>Klientsky portál</small>
+        </div>
+      </div>
+      <button class="ghost-action" id="portalLogoutButton" type="button">Odhlásiť</button>
+    </header>
+    <div class="content" id="clientPortalContent"></div>
+  </main>
+
+  <template id="modalTemplate">
+    <div class="modal-backdrop">
+      <section class="modal" role="dialog" aria-modal="true">
+        <header>
+          <h3></h3>
+          <button class="icon-button" type="button" data-close-modal aria-label="Zavrieť">×</button>
+        </header>
+        <div class="modal-body"></div>
+      </section>
+    </div>
+  </template>
+
+  <script src="data.js"></script>
+  <script src="supabase-config.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>

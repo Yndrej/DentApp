@@ -1,0 +1,10 @@
+{
+  "name": "DentApp CRM",
+  "short_name": "DentApp",
+  "description": "CRM systém DentAll pre technikov, administrátorov, ambulancie, zariadenia a sklad.",
+  "start_url": "./index.html",
+  "display": "standalone",
+  "background_color": "#f4f8f9",
+  "theme_color": "#0e5f78",
+  "icons": []
+}
