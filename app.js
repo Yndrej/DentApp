@@ -33,8 +33,8 @@ let inventoryManufacturerFilter = "all";
 let inventoryCategoryFilter = "all";
 let serviceTechnicianFilter = "all";
 let serviceStatusFilter = "open";
-const defaultDataMode = ["localhost", "127.0.0.1", ""].includes(window.location.hostname) ? "local" : "supabase";
-let dataMode = localStorage.getItem("dentapp-data-mode") || defaultDataMode;
+let dataMode = "supabase";
+localStorage.removeItem("dentapp-data-mode");
 
 const seedData = {
   users: structuredClone(officialUsers),
@@ -477,30 +477,19 @@ function initLogin() {
     event.preventDefault();
     const email = qs("#loginEmail").value.trim();
     const password = qs("#loginPin").value;
-    const useLocalFallback = qs("#localLoginFallback")?.checked;
     if (!email || !password) {
       alert("Zadajte e-mail a heslo.");
       return;
     }
 
     let user = null;
-    if (useLocalFallback) {
-      user = loginWithLocalFallback(email, password);
-      if (!user) {
-        alert("Lokálny prototypový login zlyhal. Skontrolujte e-mail a lokálne heslo.");
-        return;
-      }
+    try {
+      user = await loginWithSupabase(email, password);
+      supabaseStatus = { state: "Prihlásené", detail: `Supabase Auth prihlásil používateľa ${user.name}.` };
+    } catch (error) {
       supabaseAuth = null;
-      supabaseStatus = { state: "Lokálny režim", detail: "Používateľ je prihlásený lokálne. Online DB ešte nie je aktívna pre tento účet." };
-    } else {
-      try {
-        user = await loginWithSupabase(email, password);
-        supabaseStatus = { state: "Prihlásené", detail: `Supabase Auth prihlásil používateľa ${user.name}.` };
-      } catch (error) {
-        supabaseAuth = null;
-        alert(`Supabase prihlásenie zlyhalo: ${error.message}`);
-        return;
-      }
+      alert(`Supabase prihlásenie zlyhalo: ${error.message}`);
+      return;
     }
 
     session = user;
@@ -537,7 +526,6 @@ function initLogin() {
     supabaseAuth = null;
     qs("#loginEmail").value = "";
     qs("#loginPin").value = "";
-    if (qs("#localLoginFallback")) qs("#localLoginFallback").checked = false;
     qs("#appShell").classList.add("is-hidden");
     qs("#loginScreen").classList.remove("is-hidden");
   };
@@ -548,11 +536,7 @@ function initLogin() {
     qs("#loginScreen").classList.remove("is-hidden");
   };
   qs("#changePasswordButton").onclick = () => {
-    if (session?.online) {
-      alert("Online heslo sa mení cez Supabase Auth. Lokálny formulár je dostupný iba pre prototypové účty.");
-      return;
-    }
-    openChangePasswordForm(false);
+    alert("Online heslo sa teraz spravuje cez Supabase Auth. Zmenu hesla doplníme ako samostatnú funkciu.");
   };
 }
 
@@ -573,14 +557,6 @@ function initNavigation() {
 
   qs("#menuButton").addEventListener("click", () => qs(".sidebar").classList.toggle("is-open"));
   qs("#serialSearchButton").addEventListener("click", openSerialSearch);
-
-  qs("#resetDataButton").addEventListener("click", () => {
-    if (!confirm("Obnoviť importované dáta? Aktuálne lokálne zmeny sa prepíšu.")) return;
-    state = structuredClone(seedData);
-    saveState();
-    initLogin();
-    render();
-  });
 }
 
 function openSerialSearch() {
@@ -1512,12 +1488,6 @@ async function loginWithSupabase(email, password) {
   return profileToSession(profiles[0], auth.user);
 }
 
-function loginWithLocalFallback(email, password) {
-  const user = state.users.find((item) => item.active && item.email?.toLowerCase() === email.toLowerCase());
-  if (!user || user.passwordHash !== hashPassword(password)) return null;
-  return user;
-}
-
 async function testSupabaseConnection() {
   if (!isAdmin()) return;
   if (!supabaseAuth?.access_token) {
@@ -1961,28 +1931,6 @@ async function loadSupabaseDataIntoState() {
   };
 }
 
-async function setDataMode(mode) {
-  if (mode === dataMode) return;
-  if (mode === "supabase") {
-    try {
-      supabaseStatus = { state: "Načítavam", detail: "Načítavam dáta zo Supabase..." };
-      render();
-      await loadSupabaseDataIntoState();
-      dataMode = "supabase";
-      localStorage.setItem("dentapp-data-mode", dataMode);
-    } catch (error) {
-      supabaseStatus = { state: "Supabase načítanie zlyhalo", detail: error.message };
-    }
-  } else {
-    state = loadState();
-    ensureStateShape();
-    dataMode = "local";
-    localStorage.setItem("dentapp-data-mode", dataMode);
-    supabaseStatus = { state: "Lokálny režim", detail: "Aplikácia používa dáta z localStorage." };
-  }
-  render();
-}
-
 async function migrateLocalDataToSupabase() {
   if (!isSuperAdmin()) {
     alert("Migráciu do Supabase môže spustiť iba SuperAdministrátor.");
@@ -2107,22 +2055,12 @@ function renderAdmin() {
         <h3>Online testovanie</h3>
         <div class="row-actions">
           <button class="secondary-action" type="button" data-test-supabase>Test pripojenia</button>
-          <button class="primary-action" type="button" data-migrate-supabase>Migrovať dáta</button>
         </div>
       </div>
       <div class="summary-grid">
         <div><strong>${supabaseStatus.state}</strong><span>Supabase stav</span></div>
         <div><strong>${supabaseConfig().url ? "Nastavené" : "Chýba"}</strong><span>Project URL</span></div>
         <div><strong>${supabaseAuth?.access_token ? "Aktívny" : "Nie"}</strong><span>Auth token</span></div>
-      </div>
-      <div class="toolbar compact data-mode-toolbar">
-        <label>
-          <span>Dátový režim</span>
-          <select data-data-mode>
-            <option value="local" ${dataMode === "local" ? "selected" : ""}>Lokálny režim</option>
-            <option value="supabase" ${dataMode === "supabase" ? "selected" : ""}>Supabase režim</option>
-          </select>
-        </label>
       </div>
       <p class="form-note">${supabaseStatus.detail}</p>
     </section>
@@ -2195,8 +2133,6 @@ function bindViewActions(scope) {
   qsa("[data-edit-inventory]", scope).forEach((button) => button.addEventListener("click", () => openInventoryForm(button.dataset.editInventory)));
   qsa("[data-delete-inventory]", scope).forEach((button) => button.addEventListener("click", () => deleteInventoryItem(button.dataset.deleteInventory)));
   qs("[data-test-supabase]", scope)?.addEventListener("click", testSupabaseConnection);
-  qs("[data-migrate-supabase]", scope)?.addEventListener("click", migrateLocalDataToSupabase);
-  qs("[data-data-mode]", scope)?.addEventListener("change", (event) => setDataMode(event.target.value));
   qs("[data-open-service-form]", scope)?.addEventListener("click", () => openServiceForm());
   qs("[data-export-service-billing]", scope)?.addEventListener("click", () => exportServiceBillingCsv(scope));
   qs("[data-mark-billed-service]", scope)?.addEventListener("click", () => markServiceBillingAsBilled(scope));

@@ -39,12 +39,8 @@
           <span>Heslo</span>
           <input id="loginPin" type="password" autocomplete="current-password" placeholder="Vaše heslo">
         </label>
-        <label class="checkline">
-          <input id="localLoginFallback" type="checkbox">
-          <span>Použiť lokálny prototypový login</span>
-        </label>
         <button class="primary-action" type="submit">Prihlásiť sa</button>
-        <p class="form-note">Pre online test nechajte lokálny prototypový login vypnutý. Zapnite ho iba vtedy, keď sa potrebujete dostať do starej lokálnej verzie.</p>
+        <p class="form-note">Prihlásenie prebieha cez Supabase Auth a spoločnú online databázu.</p>
       </form>
 
       <form class="login-form is-hidden" id="portalLoginForm">
@@ -114,7 +110,6 @@
         <div class="topbar-actions">
           <input id="globalSearch" type="search" placeholder="Hľadať ambulanciu, zariadenie, SN...">
           <button class="secondary-action" id="serialSearchButton" type="button">SN</button>
-          <button class="secondary-action" id="resetDataButton" type="button">Obnoviť import</button>
         </div>
       </header>
 
