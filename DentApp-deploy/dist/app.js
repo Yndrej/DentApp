@@ -789,7 +789,12 @@ function renderInventory() {
     <section class="panel">
       <div class="panel-header">
         <h3>Skladové položky</h3>
-        ${isAdmin() ? `<button class="primary-action" type="button" data-open-inventory-form>Pridať položku</button>` : ""}
+        ${isAdmin() ? `
+          <div class="row-actions">
+            <button class="ghost-action" type="button" data-open-bulk-inventory-form>Pridať viac položiek</button>
+            <button class="primary-action" type="button" data-open-inventory-form>Pridať položku</button>
+          </div>
+        ` : ""}
       </div>
       <div class="toolbar inventory-toolbar">
         <label>
@@ -2130,6 +2135,7 @@ function bindViewActions(scope) {
   qs("[data-open-client-form]", scope)?.addEventListener("click", () => openClientForm());
   qs("[data-open-device-form]", scope)?.addEventListener("click", () => openDeviceForm());
   qs("[data-open-inventory-form]", scope)?.addEventListener("click", () => openInventoryForm());
+  qs("[data-open-bulk-inventory-form]", scope)?.addEventListener("click", () => openBulkInventoryForm());
   qsa("[data-edit-inventory]", scope).forEach((button) => button.addEventListener("click", () => openInventoryForm(button.dataset.editInventory)));
   qsa("[data-delete-inventory]", scope).forEach((button) => button.addEventListener("click", () => deleteInventoryItem(button.dataset.deleteInventory)));
   qs("[data-test-supabase]", scope)?.addEventListener("click", testSupabaseConnection);
@@ -2391,6 +2397,29 @@ function openInventoryForm(id = "") {
       <button class="primary-action full" type="submit">${id ? "Uložiť zmeny" : "Uložiť položku"}</button>
     </form>
   `, (modal) => qs("#inventoryForm", modal).addEventListener("submit", saveInventory));
+}
+
+function openBulkInventoryForm() {
+  if (!isAdmin()) return;
+  openModal("Pridať viac skladových položiek", `
+    <form class="form-grid" id="bulkInventoryForm">
+      <label><span>Predvolený výrobca</span><select name="manufacturer">
+        ${manufacturers.map((name) => `<option>${name}</option>`).join("")}
+      </select></label>
+      <label><span>Predvolený typ</span><select name="itemType">
+        ${inventoryCategories.map((name) => `<option>${name}</option>`).join("")}
+      </select></label>
+      ${input("category", "Predvolená kategória", "Servis", "text", "Servis")}
+      ${input("location", "Predvolené umiestnenie", "Sklad Prešov / regál A1", "text", "", false)}
+      ${input("min", "Predvolené minimum", "0", "number", 0)}
+      <label class="full">
+        <span>Položky</span>
+        <textarea name="itemsText" rows="10" placeholder="Názov; SKU; Množstvo; Minimum; Rezervované; Výrobca; Typ; Kategória; Umiestnenie; Kompatibilita; Poznámka" required></textarea>
+      </label>
+      <p class="form-note full">Každý riadok vytvorí jednu položku. Stačí vyplniť názov a množstvo, ostatné hodnoty sa doplnia z predvolených polí. Podporované sú riadky oddelené bodkočiarkou, tabulátorom alebo čiarkou.</p>
+      <button class="primary-action full" type="submit">Uložiť položky</button>
+    </form>
+  `, (modal) => qs("#bulkInventoryForm", modal).addEventListener("submit", saveBulkInventory));
 }
 
 function openServiceForm(id = "") {
@@ -3554,6 +3583,85 @@ async function saveInventory(event) {
     state.inventory.push(payload);
     addAudit("Pridaná skladová položka", `${payload.name} - sklad ${payload.qty} ks`);
   }
+  saveState();
+  closeCurrentModal(form);
+  render();
+}
+
+function splitInventoryImportLine(line) {
+  const delimiter = line.includes(";") ? ";" : line.includes("\t") ? "\t" : ",";
+  return line.split(delimiter).map((value) => value.trim());
+}
+
+function inventoryItemsFromBulkText(text, defaults) {
+  const stamp = Date.now().toString(36);
+  return text
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .map((line, index) => {
+      const [
+        name,
+        sku = "",
+        qty = "0",
+        min = defaults.min,
+        reserved = "0",
+        manufacturer = defaults.manufacturer,
+        itemType = defaults.itemType,
+        category = defaults.category,
+        location = defaults.location,
+        compatibility = "",
+        note = "",
+      ] = splitInventoryImportLine(line);
+      return {
+        id: `i${stamp}-${index + 1}`,
+        name,
+        manufacturer: manufacturer || defaults.manufacturer,
+        itemType: itemType || defaults.itemType,
+        sku,
+        category: category || defaults.category,
+        qty: Number(qty) || 0,
+        min: Number(min) || 0,
+        reserved: Number(reserved) || 0,
+        location: location || defaults.location,
+        compatibility,
+        note,
+      };
+    })
+    .filter((item) => item.name);
+}
+
+async function saveBulkInventory(event) {
+  event.preventDefault();
+  if (!isAdmin()) return;
+  const form = event.target;
+  const values = formValues(form);
+  const items = inventoryItemsFromBulkText(values.itemsText || "", {
+    manufacturer: values.manufacturer || manufacturers[0] || "",
+    itemType: values.itemType || inventoryCategories[0] || "",
+    category: values.category || "Servis",
+    location: values.location || "",
+    min: values.min || "0",
+  });
+  if (!items.length) {
+    alert("Vložte aspoň jednu skladovú položku.");
+    return;
+  }
+  if (dataMode === "supabase") {
+    try {
+      if (!supabaseAuth?.access_token) throw new Error("Najprv sa prihláste cez Supabase Auth.");
+      await upsertSupabaseRows("inventory", items.map(inventoryPayloadForSupabase));
+      await loadSupabaseDataIntoState();
+      addAudit("Pridané skladové položky online", `${items.length} položiek`);
+      closeCurrentModal(form);
+      render();
+    } catch (error) {
+      alert(`Hromadné uloženie skladu do Supabase zlyhalo: ${error.message}`);
+    }
+    return;
+  }
+  state.inventory.push(...items);
+  addAudit("Pridané skladové položky", `${items.length} položiek`);
   saveState();
   closeCurrentModal(form);
   render();
