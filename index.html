@@ -78,13 +78,16 @@
   </main>
 
   <div class="app-shell is-hidden" id="appShell">
-    <aside class="sidebar">
-      <div class="brand-lockup">
-        <span class="brand-mark">D</span>
-        <div>
-          <strong>DentApp</strong>
-          <small>DentAll CRM</small>
+    <aside class="sidebar" id="sidebar">
+      <div class="sidebar-header">
+        <div class="brand-lockup">
+          <span class="brand-mark">D</span>
+          <div>
+            <strong>DentApp</strong>
+            <small>DentAll CRM</small>
+          </div>
         </div>
+        <button class="icon-button sidebar-close" type="button" data-close-sidebar aria-label="Zatvoriť menu">×</button>
       </div>
 
       <nav class="side-nav" aria-label="Hlavná navigácia">
@@ -104,6 +107,7 @@
         <button class="ghost-action" id="logoutButton" type="button">Odhlásiť</button>
       </div>
     </aside>
+    <button class="sidebar-backdrop" type="button" data-close-sidebar aria-label="Zatvoriť menu"></button>
 
     <section class="workspace">
       <header class="topbar">
