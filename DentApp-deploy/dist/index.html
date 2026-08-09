@@ -6,7 +6,12 @@
   <title>DentApp CRM | DentAll</title>
   <meta name="description" content="DentApp je interný CRM systém DentAll pre správu technikov, ambulancií, zariadení, skladu a servisných aktivít.">
   <meta name="theme-color" content="#0e5f78">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-title" content="DentApp">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <link rel="manifest" href="manifest.json">
+  <link rel="apple-touch-icon" href="/assets/apple-touch-icon.png">
   <link rel="stylesheet" href="styles.css">
 </head>
 <body>
@@ -73,13 +78,16 @@
   </main>
 
   <div class="app-shell is-hidden" id="appShell">
-    <aside class="sidebar">
-      <div class="brand-lockup">
-        <span class="brand-mark">D</span>
-        <div>
-          <strong>DentApp</strong>
-          <small>DentAll CRM</small>
+    <aside class="sidebar" id="sidebar">
+      <div class="sidebar-header">
+        <div class="brand-lockup">
+          <span class="brand-mark">D</span>
+          <div>
+            <strong>DentApp</strong>
+            <small>DentAll CRM</small>
+          </div>
         </div>
+        <button class="icon-button sidebar-close" type="button" data-close-sidebar aria-label="Zatvoriť menu">×</button>
       </div>
 
       <nav class="side-nav" aria-label="Hlavná navigácia">
@@ -99,6 +107,7 @@
         <button class="ghost-action" id="logoutButton" type="button">Odhlásiť</button>
       </div>
     </aside>
+    <button class="sidebar-backdrop" type="button" data-close-sidebar aria-label="Zatvoriť menu"></button>
 
     <section class="workspace">
       <header class="topbar">

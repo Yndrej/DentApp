@@ -541,11 +541,22 @@ function initLogin() {
 }
 
 function initNavigation() {
+  const sidebar = qs(".sidebar");
+  const menuButton = qs("#menuButton");
+  const closeSidebar = () => {
+    sidebar.classList.remove("is-open");
+    menuButton.setAttribute("aria-expanded", "false");
+  };
+  const toggleSidebar = () => {
+    const isOpen = sidebar.classList.toggle("is-open");
+    menuButton.setAttribute("aria-expanded", String(isOpen));
+  };
+
   qsa("[data-view]").forEach((button) => {
     button.addEventListener("click", () => {
       activeView = button.dataset.view;
       qsa("[data-view]").forEach((item) => item.classList.toggle("is-active", item === button));
-      qs(".sidebar").classList.remove("is-open");
+      closeSidebar();
       render();
     });
   });
@@ -555,7 +566,13 @@ function initNavigation() {
     render();
   });
 
-  qs("#menuButton").addEventListener("click", () => qs(".sidebar").classList.toggle("is-open"));
+  menuButton.setAttribute("aria-controls", "sidebar");
+  menuButton.setAttribute("aria-expanded", "false");
+  menuButton.addEventListener("click", toggleSidebar);
+  qsa("[data-close-sidebar]").forEach((button) => button.addEventListener("click", closeSidebar));
+  document.addEventListener("keydown", (event) => {
+    if (event.key === "Escape") closeSidebar();
+  });
   qs("#serialSearchButton").addEventListener("click", openSerialSearch);
 }
 
