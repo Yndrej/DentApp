@@ -32,6 +32,10 @@ body {
   line-height: 1.5;
 }
 
+body.auth-booting .login-screen {
+  visibility: hidden;
+}
+
 button,
 input,
 select,

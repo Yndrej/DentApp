@@ -1,4 +1,4 @@
-const DENTAPP_CACHE = "dentapp-shell-v1";
+const DENTAPP_CACHE = "dentapp-shell-v2";
 const SHELL_FILES = [
   "/",
   "/index.html",
@@ -25,6 +25,10 @@ self.addEventListener("activate", (event) => {
     ))
   );
   self.clients.claim();
+});
+
+self.addEventListener("message", (event) => {
+  if (event.data?.type === "SKIP_WAITING") self.skipWaiting();
 });
 
 self.addEventListener("fetch", (event) => {

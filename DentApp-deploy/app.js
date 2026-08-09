@@ -580,6 +580,7 @@ async function enterAuthenticatedApp(user) {
   qs("#loginScreen").classList.add("is-hidden");
   qs("#appShell").classList.remove("is-hidden");
   qs("#clientPortalShell").classList.add("is-hidden");
+  document.body.classList.remove("auth-booting");
   qs("#activeUser").textContent = session.name;
   qs("#activeRole").textContent = session.role;
   qsa(".admin-only").forEach((item) => item.classList.toggle("is-hidden", !isAdmin()));
@@ -589,7 +590,10 @@ async function enterAuthenticatedApp(user) {
 
 async function restoreLoginOnStart() {
   const user = await restoreSupabaseSession();
-  if (!user) return;
+  if (!user) {
+    document.body.classList.remove("auth-booting");
+    return;
+  }
   supabaseStatus = { state: "Prihlásené", detail: `Obnovené prihlásenie používateľa ${user.name}.` };
   await enterAuthenticatedApp(user);
 }
