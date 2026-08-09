@@ -669,6 +669,22 @@ textarea:focus {
   overflow-x: auto;
 }
 
+.table-shell .primary-action,
+.table-shell .secondary-action,
+.table-shell .ghost-action,
+.table-shell .danger-action {
+  min-height: 34px;
+  padding: 6px 9px;
+  border-radius: 5px;
+  font-size: 13px;
+  line-height: 1.15;
+}
+
+.table-shell .row-actions {
+  flex-wrap: nowrap;
+  gap: 6px;
+}
+
 table {
   width: 100%;
   min-width: 760px;
@@ -693,6 +709,10 @@ th {
 td {
   color: var(--text);
   font-size: 14px;
+}
+
+td[data-label]::before {
+  display: none;
 }
 
 tbody tr:hover {
@@ -1612,6 +1632,96 @@ tbody tr:hover {
 
   .modal-backdrop {
     padding: 10px;
+  }
+}
+
+@media (max-width: 760px) {
+  .table-shell {
+    overflow-x: visible;
+  }
+
+  .table-shell table,
+  .table-shell thead,
+  .table-shell tbody,
+  .table-shell tr,
+  .table-shell th,
+  .table-shell td {
+    display: block;
+  }
+
+  .table-shell table {
+    min-width: 0;
+  }
+
+  .table-shell thead {
+    display: none;
+  }
+
+  .table-shell tbody {
+    display: grid;
+    gap: 12px;
+  }
+
+  .table-shell tr {
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    padding: 12px;
+    background: #fff;
+  }
+
+  .table-shell tr:hover {
+    background: #fff;
+  }
+
+  .table-shell td {
+    display: grid;
+    grid-template-columns: minmax(96px, 38%) minmax(0, 1fr);
+    gap: 10px;
+    align-items: start;
+    padding: 7px 0;
+    border-bottom: 0;
+    overflow-wrap: anywhere;
+  }
+
+  .table-shell td[data-label]::before {
+    display: block;
+    content: attr(data-label);
+    color: var(--muted);
+    font-size: 12px;
+    font-weight: 900;
+    text-transform: uppercase;
+  }
+
+  .table-shell td:first-child {
+    grid-template-columns: 1fr;
+    padding-top: 0;
+  }
+
+  .table-shell td:first-child::before {
+    display: none;
+  }
+
+  .table-shell td.row-actions,
+  .table-shell td:has(.row-actions) {
+    grid-template-columns: 1fr;
+    padding-top: 10px;
+  }
+
+  .table-shell td.row-actions::before,
+  .table-shell td:has(.row-actions)::before {
+    display: none;
+  }
+
+  .table-shell .row-actions {
+    flex-wrap: wrap;
+  }
+
+  .table-shell .primary-action,
+  .table-shell .secondary-action,
+  .table-shell .ghost-action,
+  .table-shell .danger-action {
+    min-height: 38px;
+    padding: 8px 10px;
   }
 }
 

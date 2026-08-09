@@ -731,12 +731,12 @@ function clientsTable(clients) {
         <tbody>
           ${clients.map((client) => `
             <tr>
-              <td><button class="link-button" type="button" data-client-profile="${client.id}">${client.name}</button><br><small>${client.segment}</small></td>
-              <td>${clientAddress(client)}</td>
-              <td>${client.contact}<br><small>${client.email}</small></td>
-              <td>${getClientDevices(client.id).length}</td>
-              <td><span class="status-pill ${statusClass(client.status)}">${client.status}</span></td>
-              <td class="row-actions">
+              <td data-label="Ambulancia"><button class="link-button" type="button" data-client-profile="${client.id}">${client.name}</button><br><small>${client.segment}</small></td>
+              <td data-label="Adresa">${clientAddress(client)}</td>
+              <td data-label="Kontakt">${client.contact}<br><small>${client.email}</small></td>
+              <td data-label="Zariadenia">${getClientDevices(client.id).length}</td>
+              <td data-label="Stav"><span class="status-pill ${statusClass(client.status)}">${client.status}</span></td>
+              <td class="row-actions" data-label="Akcia">
                 <button class="secondary-action" type="button" data-client-profile="${client.id}">Profil</button>
                 <button class="ghost-action" type="button" data-edit-client="${client.id}">Upraviť</button>
               </td>
@@ -770,17 +770,17 @@ function devicesTable(devices) {
         <tbody>
           ${devices.map((device) => `
             <tr>
-              <td><button class="link-button" type="button" data-device-profile="${device.id}">${deviceName(device.id)}</button><br><small>${device.type} - ${device.location}</small></td>
-              <td>${clientName(device.clientId)}</td>
-              <td>${device.serial}</td>
-              <td>${formatDate(device.installed)}</td>
-              <td>${formatDate(device.warrantyUntil)}</td>
-              <td>
+              <td data-label="Zariadenie"><button class="link-button" type="button" data-device-profile="${device.id}">${deviceName(device.id)}</button><br><small>${device.type} - ${device.location}</small></td>
+              <td data-label="Ambulancia">${clientName(device.clientId)}</td>
+              <td data-label="Sériové číslo">${device.serial}</td>
+              <td data-label="Inštalácia">${formatDate(device.installed)}</td>
+              <td data-label="Záruka">${formatDate(device.warrantyUntil)}</td>
+              <td data-label="Fakturácia">
                 <span class="status-pill ${isDeviceInvoiced(device) ? "status-ok" : "status-planned"}">${isDeviceInvoiced(device) ? "Fakturované" : "Bez FA"}</span>
                 ${isAdmin() && device.invoiceFile ? `<br><small>${invoiceLink(device)}</small>` : ""}
               </td>
-              <td><span class="status-pill ${statusClass(device.status)}">${device.status}</span></td>
-              <td class="row-actions">
+              <td data-label="Stav"><span class="status-pill ${statusClass(device.status)}">${device.status}</span></td>
+              <td class="row-actions" data-label="Akcia">
                 <button class="secondary-action" type="button" data-device-profile="${device.id}">Profil</button>
                 <button class="ghost-action" type="button" data-edit-device="${device.id}">Upraviť</button>
                 ${deviceHasSignedHandover(device) ? "" : `<button class="ghost-action" type="button" data-start-handover-device="${device.id}">Podpis</button>`}
@@ -843,15 +843,15 @@ function inventoryTable(items) {
         <tbody>
           ${items.map((item) => `
             <tr>
-              <td>${item.name}<br><small>${item.compatibility || item.note || ""}</small></td>
-              <td>${item.manufacturer}</td>
-              <td>${item.itemType || item.category}</td>
-              <td>${item.sku}</td>
-              <td>${item.qty} ks</td>
-              <td>${item.reserved} ks</td>
-              <td>${item.location || "Doplniť"}</td>
-              <td><span class="status-pill ${item.qty <= item.min ? "status-low" : "status-ok"}">${item.qty <= item.min ? "Doplniť" : "OK"}</span></td>
-              ${isAdmin() ? `<td><div class="row-actions"><button class="ghost-action" type="button" data-edit-inventory="${item.id}">Upraviť</button><button class="danger-action" type="button" data-delete-inventory="${item.id}">Vymazať</button></div></td>` : ""}
+              <td data-label="Položka">${item.name}<br><small>${item.compatibility || item.note || ""}</small></td>
+              <td data-label="Výrobca">${item.manufacturer}</td>
+              <td data-label="Typ">${item.itemType || item.category}</td>
+              <td data-label="SKU">${item.sku}</td>
+              <td data-label="Sklad">${item.qty} ks</td>
+              <td data-label="Rezervované">${item.reserved} ks</td>
+              <td data-label="Umiestnenie">${item.location || "Doplniť"}</td>
+              <td data-label="Stav"><span class="status-pill ${item.qty <= item.min ? "status-low" : "status-ok"}">${item.qty <= item.min ? "Doplniť" : "OK"}</span></td>
+              ${isAdmin() ? `<td data-label="Akcia"><div class="row-actions"><button class="ghost-action" type="button" data-edit-inventory="${item.id}">Upraviť</button><button class="danger-action" type="button" data-delete-inventory="${item.id}">Vymazať</button></div></td>` : ""}
             </tr>
           `).join("")}
         </tbody>
@@ -936,11 +936,11 @@ function portalDocumentTable(documents, emptyText) {
         <tbody>
           ${documents.map((documentRecord) => `
             <tr>
-              <td>${documentRecord.title}<br><small>${(documentRecord.documents || []).join(", ")}</small></td>
-              <td>${documentRecord.deviceIds?.length ? documentRecord.deviceIds.map((id) => deviceName(id)).join(", ") : deviceName(documentRecord.deviceId)}</td>
-              <td>${formatDate(documentRecord.date || documentRecord.due)}</td>
-              <td><span class="status-pill ${statusClass(documentRecord.state)}">${documentRecord.state}</span></td>
-              <td><button class="ghost-action" type="button" data-open-signed-document="${documentRecord.id}">Otvoriť</button></td>
+              <td data-label="Dokument">${documentRecord.title}<br><small>${(documentRecord.documents || []).join(", ")}</small></td>
+              <td data-label="Zariadenie">${documentRecord.deviceIds?.length ? documentRecord.deviceIds.map((id) => deviceName(id)).join(", ") : deviceName(documentRecord.deviceId)}</td>
+              <td data-label="Dátum">${formatDate(documentRecord.date || documentRecord.due)}</td>
+              <td data-label="Stav"><span class="status-pill ${statusClass(documentRecord.state)}">${documentRecord.state}</span></td>
+              <td data-label="Akcia"><button class="ghost-action" type="button" data-open-signed-document="${documentRecord.id}">Otvoriť</button></td>
             </tr>
           `).join("")}
         </tbody>
@@ -1037,11 +1037,11 @@ function clientPortalHtml(clientId, showAccessCode = false) {
               <tbody>
                 ${serviceRequests.map((service) => `
                   <tr>
-                    <td>${service.title}<br><small>${service.portalDescription || ""}</small></td>
-                    <td>${deviceName(service.deviceId)}</td>
-                    <td>${formatDate(service.due)}</td>
-                    <td>${userName(service.technicianId)}</td>
-                    <td><span class="status-pill ${statusClass(service.state)}">${service.state}</span></td>
+                    <td data-label="Požiadavka">${service.title}<br><small>${service.portalDescription || ""}</small></td>
+                    <td data-label="Zariadenie">${deviceName(service.deviceId)}</td>
+                    <td data-label="Termín">${formatDate(service.due)}</td>
+                    <td data-label="Technik">${userName(service.technicianId)}</td>
+                    <td data-label="Stav"><span class="status-pill ${statusClass(service.state)}">${service.state}</span></td>
                   </tr>
                 `).join("")}
               </tbody>
@@ -1084,13 +1084,13 @@ function documentPacketsTable(packets) {
         <tbody>
           ${packets.map((packet) => `
             <tr>
-              <td>${packet.title}<br><small>${packet.kind}</small></td>
-              <td>${clientName(packet.clientId)}</td>
-              <td>${packet.deviceIds?.length ? packet.deviceIds.map((id) => deviceName(id)).join(", ") : (packet.deviceId ? deviceName(packet.deviceId) : "Bez zariadenia")}</td>
-              <td>${packet.templateIds.map((id) => byId("documentTemplates", id)?.name).filter(Boolean).join(", ")}</td>
-              <td>${formatDate(packet.due)}</td>
-              <td><span class="status-pill ${statusClass(packet.state)}">${packet.state}</span></td>
-              <td>
+              <td data-label="Balík">${packet.title}<br><small>${packet.kind}</small></td>
+              <td data-label="Ambulancia">${clientName(packet.clientId)}</td>
+              <td data-label="Zariadenie">${packet.deviceIds?.length ? packet.deviceIds.map((id) => deviceName(id)).join(", ") : (packet.deviceId ? deviceName(packet.deviceId) : "Bez zariadenia")}</td>
+              <td data-label="Dokumenty">${packet.templateIds.map((id) => byId("documentTemplates", id)?.name).filter(Boolean).join(", ")}</td>
+              <td data-label="Termín">${formatDate(packet.due)}</td>
+              <td data-label="Stav"><span class="status-pill ${statusClass(packet.state)}">${packet.state}</span></td>
+              <td data-label="Akcia">
                 <div class="row-actions">
                   ${canOpenSignedDocument(packet) ? `<button class="ghost-action" type="button" data-open-signed-document="${packet.id}">Otvoriť</button>` : ""}
                   ${canSignHandoverPacket(packet) ? `<button class="secondary-action" type="button" data-sign-document-packet="${packet.id}">Podpísať</button>` : ""}
@@ -1113,15 +1113,15 @@ function serviceTable(items) {
         <tbody>
           ${items.map((item) => `
             <tr>
-              <td>${item.title}</td>
-              <td>${clientName(item.clientId)}</td>
-              <td>${deviceName(item.deviceId)}</td>
-              <td>${userName(item.technicianId)}</td>
-              <td>${formatDate(item.due)}</td>
-              <td><span class="status-pill ${statusClass(item.priority)}">${item.priority}</span></td>
-              <td><span class="status-pill ${statusClass(item.state)}">${item.state}</span></td>
-              <td>${serviceBillingPill(item)}</td>
-              <td>
+              <td data-label="Úloha">${item.title}</td>
+              <td data-label="Ambulancia">${clientName(item.clientId)}</td>
+              <td data-label="Zariadenie">${deviceName(item.deviceId)}</td>
+              <td data-label="Technik">${userName(item.technicianId)}</td>
+              <td data-label="Termín">${formatDate(item.due)}</td>
+              <td data-label="Priorita"><span class="status-pill ${statusClass(item.priority)}">${item.priority}</span></td>
+              <td data-label="Stav"><span class="status-pill ${statusClass(item.state)}">${item.state}</span></td>
+              <td data-label="Fakturácia">${serviceBillingPill(item)}</td>
+              <td data-label="Akcia">
                 <div class="row-actions">
                   <button class="ghost-action" type="button" data-edit-service="${item.id}">Upraviť</button>
                   <button class="ghost-action" type="button" data-open-service-protocol="${item.id}">Servisný protokol</button>
@@ -1189,12 +1189,12 @@ function exportServiceBillingCsv(scope) {
             ${records.map((record) => {
               const values = record.serviceValues || {};
               return `<tr>
-                <td>${formatDate(record.date)}</td>
-                <td>${clientName(record.clientId)}</td>
-                <td>${deviceName(record.deviceId)}</td>
-                <td>${userName(record.technicianId)}</td>
-                <td>${values.totalPrice || "Doplniť"}</td>
-                <td><span class="status-pill ${statusClass(record.billingState || "Na fakturáciu")}">${record.billingState || "Na fakturáciu"}</span></td>
+                <td data-label="Dátum">${formatDate(record.date)}</td>
+                <td data-label="Ambulancia">${clientName(record.clientId)}</td>
+                <td data-label="Zariadenie">${deviceName(record.deviceId)}</td>
+                <td data-label="Technik">${userName(record.technicianId)}</td>
+                <td data-label="Cena">${values.totalPrice || "Doplniť"}</td>
+                <td data-label="Stav"><span class="status-pill ${statusClass(record.billingState || "Na fakturáciu")}">${record.billingState || "Na fakturáciu"}</span></td>
               </tr>`;
             }).join("")}
           </tbody>
@@ -2101,13 +2101,13 @@ function renderAdmin() {
           <tbody>
             ${state.users.map((user) => `
               <tr>
-                <td>${user.name}</td>
-                <td><span class="role-pill status-planned">${user.role}</span></td>
-                <td>${user.email}</td>
-                <td>${user.phone}</td>
-                <td><span class="status-pill ${user.active ? "status-ok" : "status-critical"}">${user.active ? "Aktívny" : "Vypnutý"}</span></td>
-                <td>${user.protected ? "Chránený účet" : ""}</td>
-                <td>${canEditUser(user) ? `<button class="ghost-action" type="button" data-edit-user="${user.id}">Upraviť</button>` : ""}</td>
+                <td data-label="Meno">${user.name}</td>
+                <td data-label="Rola"><span class="role-pill status-planned">${user.role}</span></td>
+                <td data-label="E-mail">${user.email}</td>
+                <td data-label="Telefón">${user.phone}</td>
+                <td data-label="Stav"><span class="status-pill ${user.active ? "status-ok" : "status-critical"}">${user.active ? "Aktívny" : "Vypnutý"}</span></td>
+                <td data-label="Ochrana">${user.protected ? "Chránený účet" : ""}</td>
+                <td data-label="Akcia">${canEditUser(user) ? `<button class="ghost-action" type="button" data-edit-user="${user.id}">Upraviť</button>` : ""}</td>
               </tr>
             `).join("")}
           </tbody>
