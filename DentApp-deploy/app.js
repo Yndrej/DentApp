@@ -631,7 +631,6 @@ function initNavigation() {
   document.addEventListener("keydown", (event) => {
     if (event.key === "Escape") closeSidebar();
   });
-  qs("#serialSearchButton").addEventListener("click", openSerialSearch);
 }
 
 function openSerialSearch() {
@@ -2241,7 +2240,7 @@ function renderAdmin() {
       <div class="panel-header">
         <h3>Technici a administrátori</h3>
         <div class="row-actions">
-          <button class="ghost-action" type="button" data-export-database>Export DB</button>
+          ${isSuperAdmin() ? `<button class="ghost-action" type="button" data-export-database>Export DB</button>` : ""}
           <button class="primary-action" type="button" data-open-user-form>Pridať používateľa</button>
         </div>
       </div>
@@ -2475,6 +2474,7 @@ function openDeviceProfile(id) {
 
 function openClientForm(id = "") {
   const client = id ? byId("clients", id) : {};
+  const customBilling = hasCustomBillingAddress(client);
   openModal(id ? "Upraviť ambulanciu" : "Pridať ambulanciu", `
     <form class="form-grid" id="clientForm" data-edit-id="${id}">
       ${input("name", "Názov ambulancie", "DentAll Clinic", "text", client.name)}
@@ -2486,12 +2486,21 @@ function openClientForm(id = "") {
       ${input("email", "E-mail", "recepcia@ambulancia.sk", "email", client.email, false)}
       ${input("phone", "Telefón", "+421 ...", "text", client.phone, false)}
       ${input("segment", "Segment", "Ambulancia", "text", client.segment, false)}
-      ${input("billingName", "Fakturačný názov", "Ak sa líši od ambulancie", "text", client.billingName, false)}
-      ${input("billingStreet", "Fakturačná ulica", "Ulica a číslo", "text", client.billingStreet, false)}
-      ${input("billingCity", "Fakturačné mesto", "Mesto", "text", client.billingCity, false)}
-      ${input("billingZip", "Fakturačné PSČ", "PSČ", "text", client.billingZip, false)}
-      ${input("billingCompanyId", "IČO", "36486761", "text", client.billingCompanyId, false)}
+      <div class="field-with-action">
+        ${input("billingCompanyId", "IČO", "36486761", "text", client.billingCompanyId, false)}
+        <button class="secondary-action" type="button" data-load-company-by-ico>Načítať podľa IČO</button>
+      </div>
       ${input("billingTaxId", "DIČ / IČ DPH", "SK...", "text", client.billingTaxId, false)}
+      <label class="checkline full">
+        <input type="checkbox" name="customBillingAddress" ${customBilling ? "checked" : ""}>
+        <span>Fakturačná adresa je iná ako adresa ambulancie</span>
+      </label>
+      <section class="form-subsection full ${customBilling ? "" : "is-hidden"}" data-billing-address-section>
+        ${input("billingName", "Fakturačný názov", "Ak sa líši od ambulancie", "text", client.billingName, false)}
+        ${input("billingStreet", "Fakturačná ulica", "Ulica a číslo", "text", client.billingStreet, false)}
+        ${input("billingCity", "Fakturačné mesto", "Mesto", "text", client.billingCity, false)}
+        ${input("billingZip", "Fakturačné PSČ", "PSČ", "text", client.billingZip, false)}
+      </section>
       <label><span>Stav</span><select name="status">
         ${["Aktívna", "Riziko", "Bez zariadenia", "Neaktívna"].map((status) => `<option ${client.status === status ? "selected" : ""}>${status}</option>`).join("")}
       </select></label>
@@ -2500,7 +2509,80 @@ function openClientForm(id = "") {
       <label class="full"><span>Poznámka</span><textarea name="note">${escapeHtml(client.note || "")}</textarea></label>
       <button class="primary-action full" type="submit">${id ? "Uložiť zmeny" : "Uložiť ambulanciu"}</button>
     </form>
-  `, (modal) => qs("#clientForm", modal).addEventListener("submit", saveClient));
+  `, bindClientForm);
+}
+
+function bindClientForm(modal) {
+  const form = qs("#clientForm", modal);
+  const customBillingInput = qs("[name='customBillingAddress']", form);
+  const billingSection = qs("[data-billing-address-section]", form);
+  const toggleBillingSection = () => {
+    billingSection?.classList.toggle("is-hidden", !customBillingInput?.checked);
+  };
+  customBillingInput?.addEventListener("change", toggleBillingSection);
+  qs("[data-load-company-by-ico]", form)?.addEventListener("click", () => fillCompanyByIco(form));
+  form.addEventListener("submit", saveClient);
+  toggleBillingSection();
+}
+
+async function fillCompanyByIco(form) {
+  const icoInput = qs("[name='billingCompanyId']", form);
+  const ico = (icoInput?.value || "").replace(/\D/g, "");
+  if (ico.length < 6) {
+    alert("Zadajte platné IČO.");
+    return;
+  }
+
+  const button = qs("[data-load-company-by-ico]", form);
+  const originalText = button?.textContent || "";
+  if (button) {
+    button.disabled = true;
+    button.textContent = "Načítavam...";
+  }
+
+  try {
+    const company = await fetchCompanyByIco(ico);
+    applyCompanyToClientForm(form, company);
+  } catch (error) {
+    alert(`Údaje podľa IČO sa nepodarilo načítať: ${error.message}`);
+  } finally {
+    if (button) {
+      button.disabled = false;
+      button.textContent = originalText;
+    }
+  }
+}
+
+async function fetchCompanyByIco(ico) {
+  const response = await fetch(`https://api.subjekt.sk/v1/entity/${encodeURIComponent(ico)}`);
+  if (!response.ok) throw new Error(response.status === 404 ? "IČO sa nenašlo." : "Register neodpovedal.");
+  const company = await response.json();
+  if (!company?.ico || !company?.name) throw new Error("Register nevrátil použiteľné údaje.");
+  return company;
+}
+
+function applyCompanyToClientForm(form, company) {
+  const address = company.address || {};
+  const street = [address.street, address.building_no].filter(Boolean).join(" ");
+  const useBilling = qs("[name='customBillingAddress']", form)?.checked;
+  const setValue = (name, value) => {
+    const field = qs(`[name='${name}']`, form);
+    if (field && value) field.value = value;
+  };
+
+  setValue("billingCompanyId", company.ico);
+  setValue("billingTaxId", company.ic_dph || company.dic || "");
+  if (useBilling) {
+    setValue("billingName", company.name);
+    setValue("billingStreet", street);
+    setValue("billingCity", address.city || "");
+    setValue("billingZip", address.zip || "");
+  } else {
+    setValue("name", company.name);
+    setValue("addressStreet", street);
+    setValue("city", address.city || "");
+    setValue("addressZip", address.zip || "");
+  }
 }
 
 function openDeviceForm(id = "", presetClientId = "") {
@@ -3533,6 +3615,10 @@ function input(name, labelText, placeholder = "", type = "text", value = "", req
   return `<label><span>${labelText}</span><input name="${name}" type="${type}" placeholder="${escapeHtml(placeholder)}" value="${escapeHtml(value || "")}" ${required ? "required" : ""}></label>`;
 }
 
+function hasCustomBillingAddress(client = {}) {
+  return Boolean(client.billingName || client.billingStreet || client.billingCity || client.billingZip);
+}
+
 function formValues(form) {
   return Object.fromEntries(new FormData(form).entries());
 }
@@ -3619,6 +3705,14 @@ async function saveClient(event) {
   const values = formValues(form);
   const photo = await fileToDataUrl(qs("[name='photoFile']", form)?.files?.[0]);
   delete values.photoFile;
+  const customBillingAddress = values.customBillingAddress === "on";
+  delete values.customBillingAddress;
+  if (!customBillingAddress) {
+    values.billingName = "";
+    values.billingStreet = "";
+    values.billingCity = "";
+    values.billingZip = "";
+  }
   const editId = event.target.dataset.editId;
   const payload = editId
     ? { ...byId("clients", editId), ...values, ...(photo ? { photo } : {}) }
