@@ -1,4 +1,6 @@
 const STORAGE_KEY = "dentapp-crm-state-v4";
+const AUTH_STORAGE_KEY = "dentapp-supabase-auth-v1";
+const LOGIN_PREVIEW_STORAGE_KEY = "dentapp-login-preview-v1";
 const DEFAULT_PASSWORD = "DentAll2026!";
 
 const manufacturers = [
@@ -101,6 +103,7 @@ let supabaseStatus = {
   state: "Neskontrolované",
   detail: "Supabase projekt je nakonfigurovaný, spustite test pripojenia.",
 };
+let loginPreviewTotals = savedLoginPreviewTotals();
 
 const qs = (selector, scope = document) => scope.querySelector(selector);
 const qsa = (selector, scope = document) => [...scope.querySelectorAll(selector)];
@@ -450,19 +453,55 @@ function bindClientPickers(scope) {
 }
 
 function updateLoginPreview() {
-  const riskyDevices = state.devices.filter((device) => device.status !== "OK" && device.status !== "Importované").length;
-  const lowStock = state.inventory.filter((item) => item.qty <= item.min).length;
+  const clientsTotal = loginPreviewTotals?.clients ?? state.clients.length;
+  const devicesTotal = loginPreviewTotals?.devices ?? state.devices.length;
+  const risksTotal = loginPreviewTotals?.risks ?? (
+    state.devices.filter((device) => device.status !== "OK" && device.status !== "Importované").length
+    + state.inventory.filter((item) => item.qty <= item.min).length
+  );
   const clientsCount = qs("[data-login-clients]");
   const devicesCount = qs("[data-login-devices]");
   const risksCount = qs("[data-login-risks]");
 
-  if (clientsCount) clientsCount.textContent = state.clients.length.toLocaleString("sk-SK");
-  if (devicesCount) devicesCount.textContent = state.devices.length.toLocaleString("sk-SK");
-  if (risksCount) risksCount.textContent = (riskyDevices + lowStock).toLocaleString("sk-SK");
+  if (clientsCount) clientsCount.textContent = clientsTotal.toLocaleString("sk-SK");
+  if (devicesCount) devicesCount.textContent = devicesTotal.toLocaleString("sk-SK");
+  if (risksCount) risksCount.textContent = risksTotal.toLocaleString("sk-SK");
+}
+
+function savedLoginPreviewTotals() {
+  try {
+    return JSON.parse(localStorage.getItem(LOGIN_PREVIEW_STORAGE_KEY) || "null");
+  } catch {
+    return null;
+  }
+}
+
+function saveLoginPreviewTotals(totals) {
+  loginPreviewTotals = totals;
+  localStorage.setItem(LOGIN_PREVIEW_STORAGE_KEY, JSON.stringify(totals));
+  updateLoginPreview();
+}
+
+async function refreshLoginPreviewTotals() {
+  try {
+    const token = savedSupabaseAuth()?.access_token || supabaseAuth?.access_token || "";
+    const fallbackRisks =
+      loginPreviewTotals?.risks ??
+      state.devices.filter((device) => device.status !== "OK" && device.status !== "Importované").length +
+        state.inventory.filter((item) => item.qty <= item.min).length;
+    const [clients, devices] = await Promise.all([
+      supabaseCount("clients?select=id", token),
+      supabaseCount("devices?select=id", token),
+    ]);
+    saveLoginPreviewTotals({ clients, devices, risks: fallbackRisks });
+  } catch {
+    updateLoginPreview();
+  }
 }
 
 function initLogin() {
   updateLoginPreview();
+  refreshLoginPreviewTotals();
 
   qsa("[data-login-mode]").forEach((button) => {
     button.onclick = () => {
@@ -492,22 +531,7 @@ function initLogin() {
       return;
     }
 
-    session = user;
-    portalSessionClientId = "";
-    if (session.online && dataMode === "supabase") {
-      try {
-        await loadSupabaseDataIntoState();
-      } catch (error) {
-        supabaseStatus = { state: "Supabase načítanie zlyhalo", detail: error.message };
-      }
-    }
-    qs("#loginScreen").classList.add("is-hidden");
-    qs("#appShell").classList.remove("is-hidden");
-    qs("#clientPortalShell").classList.add("is-hidden");
-    qs("#activeUser").textContent = session.name;
-    qs("#activeRole").textContent = session.role;
-    qsa(".admin-only").forEach((item) => item.classList.toggle("is-hidden", !isAdmin()));
-    render();
+    await enterAuthenticatedApp(user);
     if (!session.online && session.mustChangePassword) openChangePasswordForm(true);
   };
 
@@ -524,10 +548,13 @@ function initLogin() {
   qs("#logoutButton").onclick = () => {
     session = null;
     supabaseAuth = null;
+    clearSupabaseAuth();
     qs("#loginEmail").value = "";
     qs("#loginPin").value = "";
     qs("#appShell").classList.add("is-hidden");
     qs("#loginScreen").classList.remove("is-hidden");
+    updateLoginPreview();
+    refreshLoginPreviewTotals();
   };
   qs("#portalLogoutButton").onclick = () => {
     portalSessionClientId = "";
@@ -538,6 +565,33 @@ function initLogin() {
   qs("#changePasswordButton").onclick = () => {
     alert("Online heslo sa teraz spravuje cez Supabase Auth. Zmenu hesla doplníme ako samostatnú funkciu.");
   };
+}
+
+async function enterAuthenticatedApp(user) {
+  session = user;
+  portalSessionClientId = "";
+  if (session.online && dataMode === "supabase") {
+    try {
+      await loadSupabaseDataIntoState();
+    } catch (error) {
+      supabaseStatus = { state: "Supabase načítanie zlyhalo", detail: error.message };
+    }
+  }
+  qs("#loginScreen").classList.add("is-hidden");
+  qs("#appShell").classList.remove("is-hidden");
+  qs("#clientPortalShell").classList.add("is-hidden");
+  qs("#activeUser").textContent = session.name;
+  qs("#activeRole").textContent = session.role;
+  qsa(".admin-only").forEach((item) => item.classList.toggle("is-hidden", !isAdmin()));
+  updateLoginPreview();
+  render();
+}
+
+async function restoreLoginOnStart() {
+  const user = await restoreSupabaseSession();
+  if (!user) return;
+  supabaseStatus = { state: "Prihlásené", detail: `Obnovené prihlásenie používateľa ${user.name}.` };
+  await enterAuthenticatedApp(user);
 }
 
 function initNavigation() {
@@ -1402,6 +1456,27 @@ async function supabaseRequest(path, options = {}) {
   return payload;
 }
 
+async function supabaseCount(path, token = supabaseAuth?.access_token) {
+  const config = supabaseConfig();
+  if (!config.url || !config.anonKey) throw new Error("Chýba Supabase URL alebo anon public key.");
+  const response = await fetch(supabaseRestUrl(path), {
+    method: "GET",
+    headers: {
+      apikey: config.anonKey,
+      Authorization: `Bearer ${token || config.anonKey}`,
+      Prefer: "count=exact",
+      Range: "0-0",
+    },
+  });
+  if (!response.ok) {
+    const payload = await response.json().catch(() => null);
+    const message = payload?.message || payload?.hint || response.statusText;
+    throw new Error(`${response.status}: ${message}`);
+  }
+  const range = response.headers.get("content-range") || "";
+  return Number(range.split("/").at(-1)) || 0;
+}
+
 async function supabaseAuthRequest(path, body) {
   const config = supabaseConfig();
   if (!config.url || !config.anonKey) throw new Error("Chýba Supabase URL alebo anon public key.");
@@ -1417,6 +1492,47 @@ async function supabaseAuthRequest(path, body) {
   const payload = await response.json().catch(() => null);
   if (!response.ok) throw new Error(payload?.msg || payload?.message || payload?.error_description || response.statusText);
   return payload;
+}
+
+async function supabaseAuthGetUser(token) {
+  const config = supabaseConfig();
+  if (!config.url || !config.anonKey) throw new Error("Chýba Supabase URL alebo anon public key.");
+  const response = await fetch(`${String(config.url).replace(/\/$/, "")}/auth/v1/user`, {
+    headers: {
+      apikey: config.anonKey,
+      Authorization: `Bearer ${token}`,
+    },
+  });
+  const payload = await response.json().catch(() => null);
+  if (!response.ok) throw new Error(payload?.msg || payload?.message || payload?.error_description || response.statusText);
+  return payload;
+}
+
+function saveSupabaseAuth(auth) {
+  if (!auth?.access_token) return;
+  localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(auth));
+}
+
+function savedSupabaseAuth() {
+  try {
+    return JSON.parse(localStorage.getItem(AUTH_STORAGE_KEY) || "null");
+  } catch {
+    return null;
+  }
+}
+
+function clearSupabaseAuth() {
+  localStorage.removeItem(AUTH_STORAGE_KEY);
+}
+
+async function refreshSupabaseAuth(auth) {
+  if (!auth?.refresh_token) throw new Error("Chýba refresh token.");
+  const refreshed = await supabaseAuthRequest("token?grant_type=refresh_token", {
+    refresh_token: auth.refresh_token,
+  });
+  supabaseAuth = refreshed;
+  saveSupabaseAuth(refreshed);
+  return refreshed;
 }
 
 function profileToSession(profile, authUser) {
@@ -1502,12 +1618,37 @@ async function createSupabaseAuthUser(user, password) {
 async function loginWithSupabase(email, password) {
   const auth = await supabaseAuthRequest("token?grant_type=password", { email, password });
   supabaseAuth = auth;
+  saveSupabaseAuth(auth);
   const authUserId = auth.user?.id || "";
   const profiles = await supabaseRequest(`users_profile?select=*&id=eq.${encodeURIComponent(authUserId)}&limit=1`, { token: auth.access_token });
   if (!profiles?.length) {
     throw new Error(`Prihlásenie prešlo pre ${auth.user?.email || email}, auth id ${authUserId}, ale REST/RLS nevrátil profil z users_profile.`);
   }
   return profileToSession(profiles[0], auth.user);
+}
+
+async function restoreSupabaseSession() {
+  const auth = savedSupabaseAuth();
+  if (!auth?.access_token) return null;
+  try {
+    supabaseAuth = auth;
+    let activeAuth = auth;
+    let authUser = null;
+    try {
+      authUser = await supabaseAuthGetUser(activeAuth.access_token);
+    } catch {
+      activeAuth = await refreshSupabaseAuth(auth);
+      authUser = await supabaseAuthGetUser(activeAuth.access_token);
+    }
+    const authUserId = authUser?.id || auth.user?.id || "";
+    const profiles = await supabaseRequest(`users_profile?select=*&id=eq.${encodeURIComponent(authUserId)}&limit=1`, { token: activeAuth.access_token });
+    if (!profiles?.length) throw new Error("Používateľ nemá profil v users_profile.");
+    return profileToSession(profiles[0], authUser || auth.user);
+  } catch (error) {
+    supabaseAuth = null;
+    clearSupabaseAuth();
+    return null;
+  }
 }
 
 async function testSupabaseConnection() {
@@ -1947,6 +2088,12 @@ async function loadSupabaseDataIntoState() {
   ensureStateShape();
   state.users = onlineUsers.length ? onlineUsers : state.users;
   attachDocumentRecords();
+  saveLoginPreviewTotals({
+    clients: clients.length,
+    devices: devices.length,
+    risks: devices.filter((device) => device.status !== "OK" && device.status !== "Importované").length
+      + inventoryRows.map(inventoryFromSupabase).filter((item) => item.qty <= item.min).length,
+  });
   supabaseStatus = {
     state: "Supabase režim",
     detail: `Načítané zo Supabase: ${onlineUsers.length} používateľov, ${clients.length} klientov, ${devices.length} zariadení, ${inventoryRows.length} skladových položiek, ${service.length} servisných úloh, ${documentPackets.length} dokumentov. Ambulančné profily, zariadenia, používatelia, servis, sklad aj dokumenty sa už zapisujú online.`,
@@ -4142,3 +4289,4 @@ async function saveUser(event) {
 
 initLogin();
 initNavigation();
+restoreLoginOnStart();
