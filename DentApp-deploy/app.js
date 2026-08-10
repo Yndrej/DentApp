@@ -430,10 +430,10 @@ function imagePreview(src, alt) {
     : `<div class="entity-photo placeholder">Bez fotografie</div>`;
 }
 
-function clientPicker(selectedId = "") {
+function clientPicker(selectedId = "", allowCreate = false) {
   const selected = byId("clients", selectedId);
   return `
-    <label class="client-picker">
+    <label class="client-picker" data-allow-create-client="${allowCreate ? "true" : "false"}">
       <span>Ambulancia</span>
       <input name="clientSearch" list="clientOptions" placeholder="Začnite písať názov, mesto alebo ulicu..." value="${escapeHtml(selected?.name || "")}" required>
       <input type="hidden" name="clientId" value="${escapeHtml(selectedId)}">
@@ -441,6 +441,23 @@ function clientPicker(selectedId = "") {
         ${state.clients.map((client) => `<option value="${escapeHtml(client.name)}" label="${escapeHtml(clientAddress(client))}"></option>`).join("")}
       </datalist>
       <div class="search-result-list client-result-list" data-client-search-results></div>
+      ${allowCreate ? `
+        <div class="quick-client-form is-hidden" data-quick-client-form>
+          <strong>Nová ambulancia</strong>
+          <div class="quick-client-grid">
+            <input data-quick-client="name" type="text" placeholder="Názov ambulancie">
+            <input data-quick-client="city" type="text" placeholder="Mesto">
+            <input data-quick-client="addressStreet" type="text" placeholder="Ulica a číslo">
+            <input data-quick-client="contact" type="text" placeholder="Kontaktná osoba">
+            <input data-quick-client="email" type="email" placeholder="E-mail">
+            <input data-quick-client="phone" type="tel" placeholder="Telefón">
+          </div>
+          <div class="button-row">
+            <button class="primary-action" type="button" data-save-quick-client>Uložiť ambulanciu</button>
+            <button class="ghost-action" type="button" data-cancel-quick-client>Zrušiť</button>
+          </div>
+        </div>
+      ` : ""}
       <small class="field-hint">Vyberte ambulanciu zo zobrazených zhôd.</small>
     </label>
   `;
@@ -458,6 +475,8 @@ function bindClientPickers(scope) {
     const textInput = qs("[name='clientSearch']", picker);
     const hiddenInput = qs("[name='clientId']", picker);
     const results = qs("[data-client-search-results]", picker);
+    const quickForm = qs("[data-quick-client-form]", picker);
+    const allowCreate = picker.dataset.allowCreateClient === "true";
     const renderClientResults = () => {
       const typed = textInput.value.trim().toLowerCase();
       const matches = typed
@@ -465,12 +484,18 @@ function bindClientPickers(scope) {
           .filter((client) => clientSearchText(client).toLowerCase().includes(typed))
           .slice(0, 8)
         : [];
+      const exactMatch = matches.some((client) => client.name.toLowerCase() === typed);
       results.innerHTML = matches.map((client) => `
         <button class="search-result-button" type="button" data-pick-client="${client.id}">
           <strong>${client.name}</strong>
           <small>${clientAddress(client)}</small>
         </button>
-      `).join("");
+      `).join("") + (allowCreate && typed && !exactMatch ? `
+        <button class="search-result-button create-result-button" type="button" data-open-quick-client>
+          <strong>Vytvoriť ambulanciu „${escapeHtml(textInput.value.trim())}”</strong>
+          <small>Ambulancia ešte nie je v zozname. Založí sa bez odchodu z balíka.</small>
+        </button>
+      ` : "");
       qsa("[data-pick-client]", results).forEach((button) => {
         button.addEventListener("click", () => {
           const client = byId("clients", button.dataset.pickClient);
@@ -478,10 +503,23 @@ function bindClientPickers(scope) {
           textInput.value = client.name;
           hiddenInput.value = client.id;
           results.innerHTML = "";
+          quickForm?.classList.add("is-hidden");
           hiddenInput.dispatchEvent(new Event("change", { bubbles: true }));
         });
       });
+      qs("[data-open-quick-client]", results)?.addEventListener("click", () => {
+        const nameInput = qs("[data-quick-client='name']", picker);
+        if (nameInput && !nameInput.value.trim()) nameInput.value = textInput.value.trim();
+        results.innerHTML = "";
+        quickForm?.classList.remove("is-hidden");
+        nameInput?.focus();
+      });
     };
+    qs("[data-save-quick-client]", picker)?.addEventListener("click", () => saveQuickClientFromPicker(picker));
+    qs("[data-cancel-quick-client]", picker)?.addEventListener("click", () => {
+      quickForm?.classList.add("is-hidden");
+      renderClientResults();
+    });
     textInput.addEventListener("input", () => {
       const exactClient = state.clients.find((client) => client.name.toLowerCase() === textInput.value.trim().toLowerCase());
       const client = exactClient || null;
@@ -491,6 +529,58 @@ function bindClientPickers(scope) {
     });
     textInput.addEventListener("focus", renderClientResults);
   });
+}
+
+async function saveQuickClientFromPicker(picker) {
+  const value = (key) => qs(`[data-quick-client='${key}']`, picker)?.value.trim() || "";
+  const name = value("name");
+  if (!name) {
+    alert("Zadajte názov ambulancie.");
+    return;
+  }
+  const existing = findClientByTypedValue(name);
+  if (existing) {
+    qs("[name='clientSearch']", picker).value = existing.name;
+    qs("[name='clientId']", picker).value = existing.id;
+    qs("[data-quick-client-form]", picker)?.classList.add("is-hidden");
+    qs("[name='clientId']", picker).dispatchEvent(new Event("change", { bubbles: true }));
+    return;
+  }
+  const client = {
+    id: nextId("c", "clients"),
+    name,
+    city: value("city"),
+    addressStreet: value("addressStreet"),
+    addressZip: "",
+    addressFloor: "",
+    contact: value("contact"),
+    email: value("email"),
+    phone: normalizePhoneNumber(value("phone")),
+    status: "Aktívna",
+    segment: "Ambulancia",
+    note: "Založené rýchlo pri tvorbe podpisového balíka.",
+    portalEnabled: true,
+  };
+
+  try {
+    if (dataMode === "supabase") {
+      await saveClientToSupabase(client);
+      await loadSupabaseDataIntoState();
+    } else {
+      state.clients.push(client);
+      saveState();
+    }
+    const savedClient = byId("clients", client.id) || findClientByTypedValue(name);
+    if (!savedClient) throw new Error("Ambulancia sa uložila, ale nepodarilo sa ju znova načítať.");
+    qs("[name='clientSearch']", picker).value = savedClient.name;
+    qs("[name='clientId']", picker).value = savedClient.id;
+    qs("[data-client-search-results]", picker).innerHTML = "";
+    qs("[data-quick-client-form]", picker)?.classList.add("is-hidden");
+    qs("[name='clientId']", picker).dispatchEvent(new Event("change", { bubbles: true }));
+    addAudit(dataMode === "supabase" ? "Pridaná ambulancia online" : "Pridaná ambulancia", `${savedClient.name} - rýchle založenie z podpisového balíka`);
+  } catch (error) {
+    alert(`Rýchle založenie ambulancie zlyhalo: ${error.message}`);
+  }
 }
 
 function updateLoginPreview() {
@@ -2951,7 +3041,7 @@ function openDocumentPacketForm() {
         <option>Demontáž</option>
         <option>Servis</option>
       </select></label>
-      ${clientPicker()}
+      ${clientPicker("", true)}
       <label class="full device-search-field">
         <span>Zariadenie</span>
         <input name="deviceSearch" type="search" placeholder="Po výbere ambulancie píšte SN, model, typ alebo umiestnenie...">

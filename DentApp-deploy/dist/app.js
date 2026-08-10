@@ -99,6 +99,7 @@ let supabaseAuth = null;
 let portalSessionClientId = "";
 let activeView = "dashboard";
 let query = "";
+let clientLetterFilter = "all";
 let supabaseStatus = {
   state: "Neskontrolované",
   detail: "Supabase projekt je nakonfigurovaný, spustite test pripojenia.",
@@ -107,6 +108,27 @@ let loginPreviewTotals = savedLoginPreviewTotals();
 
 const qs = (selector, scope = document) => scope.querySelector(selector);
 const qsa = (selector, scope = document) => [...scope.querySelectorAll(selector)];
+
+function hasSupabaseSettings() {
+  const config = supabaseConfig();
+  return Boolean(config.url && config.anonKey);
+}
+
+function friendlyAuthError(error, context = "login") {
+  const message = String(error?.message || error || "").toLowerCase();
+  if (message.includes("invalid login credentials")) {
+    return context === "password"
+      ? "Aktuálne heslo nie je správne. Skontrolujte ho a skúste to znova."
+      : "Nesprávny e-mail alebo heslo. Skontrolujte prihlasovacie údaje a skúste to znova.";
+  }
+  if (message.includes("email not confirmed")) {
+    return "E-mail používateľa ešte nie je potvrdený v Supabase Auth.";
+  }
+  if (message.includes("jwt") || message.includes("expired") || message.includes("session")) {
+    return "Prihlásenie medzičasom expirovalo. Odhláste sa a prihláste sa znova.";
+  }
+  return error?.message || "Neznáma chyba.";
+}
 
 function escapeHtml(value = "") {
   return String(value)
@@ -277,6 +299,21 @@ function formatDate(value) {
   return new Intl.DateTimeFormat("sk-SK").format(date);
 }
 
+function formatOptionalDate(value, fallback = "neuvedené") {
+  const date = new Date(value);
+  if (!value || Number.isNaN(date.getTime())) return fallback;
+  return new Intl.DateTimeFormat("sk-SK").format(date);
+}
+
+function isPlaceholderValue(value) {
+  const normalized = String(value || "").trim().toLowerCase();
+  return !normalized || normalized === "doplniť" || normalized === "doplnit" || normalized.startsWith("doplniť ") || normalized.startsWith("doplnit ");
+}
+
+function cleanImportedValue(value) {
+  return isPlaceholderValue(value) ? "" : String(value || "").trim();
+}
+
 function getClientDevices(clientId) {
   return state.devices.filter((device) => device.clientId === clientId);
 }
@@ -327,11 +364,12 @@ function clientName(id) {
 
 function deviceName(id) {
   const device = byId("devices", id);
-  return device ? `${device.brand} ${device.model}` : "Neznáme zariadenie";
+  if (!device) return "Neznáme zariadenie";
+  return [cleanImportedValue(device.brand), cleanImportedValue(device.model)].filter(Boolean).join(" ") || cleanImportedValue(device.type) || "Neznáme zariadenie";
 }
 
 function deviceLabel(device) {
-  return `${device.brand || "Značka"} ${device.model || "Model"} - SN ${device.serial || "Doplniť"}`;
+  return `${[cleanImportedValue(device.brand), cleanImportedValue(device.model)].filter(Boolean).join(" ") || "Zariadenie"} - SN ${cleanImportedValue(device.serial) || "neuvedené"}`;
 }
 
 function isDeviceInvoiced(device) {
@@ -392,10 +430,10 @@ function imagePreview(src, alt) {
     : `<div class="entity-photo placeholder">Bez fotografie</div>`;
 }
 
-function clientPicker(selectedId = "") {
+function clientPicker(selectedId = "", allowCreate = false) {
   const selected = byId("clients", selectedId);
   return `
-    <label class="client-picker">
+    <label class="client-picker" data-allow-create-client="${allowCreate ? "true" : "false"}">
       <span>Ambulancia</span>
       <input name="clientSearch" list="clientOptions" placeholder="Začnite písať názov, mesto alebo ulicu..." value="${escapeHtml(selected?.name || "")}" required>
       <input type="hidden" name="clientId" value="${escapeHtml(selectedId)}">
@@ -403,6 +441,23 @@ function clientPicker(selectedId = "") {
         ${state.clients.map((client) => `<option value="${escapeHtml(client.name)}" label="${escapeHtml(clientAddress(client))}"></option>`).join("")}
       </datalist>
       <div class="search-result-list client-result-list" data-client-search-results></div>
+      ${allowCreate ? `
+        <div class="quick-client-form is-hidden" data-quick-client-form>
+          <strong>Nová ambulancia</strong>
+          <div class="quick-client-grid">
+            <input data-quick-client="name" type="text" placeholder="Názov ambulancie">
+            <input data-quick-client="city" type="text" placeholder="Mesto">
+            <input data-quick-client="addressStreet" type="text" placeholder="Ulica a číslo">
+            <input data-quick-client="contact" type="text" placeholder="Kontaktná osoba">
+            <input data-quick-client="email" type="email" placeholder="E-mail">
+            <input data-quick-client="phone" type="tel" placeholder="Telefón">
+          </div>
+          <div class="button-row">
+            <button class="primary-action" type="button" data-save-quick-client>Uložiť ambulanciu</button>
+            <button class="ghost-action" type="button" data-cancel-quick-client>Zrušiť</button>
+          </div>
+        </div>
+      ` : ""}
       <small class="field-hint">Vyberte ambulanciu zo zobrazených zhôd.</small>
     </label>
   `;
@@ -420,6 +475,8 @@ function bindClientPickers(scope) {
     const textInput = qs("[name='clientSearch']", picker);
     const hiddenInput = qs("[name='clientId']", picker);
     const results = qs("[data-client-search-results]", picker);
+    const quickForm = qs("[data-quick-client-form]", picker);
+    const allowCreate = picker.dataset.allowCreateClient === "true";
     const renderClientResults = () => {
       const typed = textInput.value.trim().toLowerCase();
       const matches = typed
@@ -427,12 +484,18 @@ function bindClientPickers(scope) {
           .filter((client) => clientSearchText(client).toLowerCase().includes(typed))
           .slice(0, 8)
         : [];
+      const exactMatch = matches.some((client) => client.name.toLowerCase() === typed);
       results.innerHTML = matches.map((client) => `
         <button class="search-result-button" type="button" data-pick-client="${client.id}">
           <strong>${client.name}</strong>
           <small>${clientAddress(client)}</small>
         </button>
-      `).join("");
+      `).join("") + (allowCreate && typed && !exactMatch ? `
+        <button class="search-result-button create-result-button" type="button" data-open-quick-client>
+          <strong>Vytvoriť ambulanciu „${escapeHtml(textInput.value.trim())}”</strong>
+          <small>Ambulancia ešte nie je v zozname. Založí sa bez odchodu z balíka.</small>
+        </button>
+      ` : "");
       qsa("[data-pick-client]", results).forEach((button) => {
         button.addEventListener("click", () => {
           const client = byId("clients", button.dataset.pickClient);
@@ -440,10 +503,23 @@ function bindClientPickers(scope) {
           textInput.value = client.name;
           hiddenInput.value = client.id;
           results.innerHTML = "";
+          quickForm?.classList.add("is-hidden");
           hiddenInput.dispatchEvent(new Event("change", { bubbles: true }));
         });
       });
+      qs("[data-open-quick-client]", results)?.addEventListener("click", () => {
+        const nameInput = qs("[data-quick-client='name']", picker);
+        if (nameInput && !nameInput.value.trim()) nameInput.value = textInput.value.trim();
+        results.innerHTML = "";
+        quickForm?.classList.remove("is-hidden");
+        nameInput?.focus();
+      });
     };
+    qs("[data-save-quick-client]", picker)?.addEventListener("click", () => saveQuickClientFromPicker(picker));
+    qs("[data-cancel-quick-client]", picker)?.addEventListener("click", () => {
+      quickForm?.classList.add("is-hidden");
+      renderClientResults();
+    });
     textInput.addEventListener("input", () => {
       const exactClient = state.clients.find((client) => client.name.toLowerCase() === textInput.value.trim().toLowerCase());
       const client = exactClient || null;
@@ -453,6 +529,58 @@ function bindClientPickers(scope) {
     });
     textInput.addEventListener("focus", renderClientResults);
   });
+}
+
+async function saveQuickClientFromPicker(picker) {
+  const value = (key) => qs(`[data-quick-client='${key}']`, picker)?.value.trim() || "";
+  const name = value("name");
+  if (!name) {
+    alert("Zadajte názov ambulancie.");
+    return;
+  }
+  const existing = findClientByTypedValue(name);
+  if (existing) {
+    qs("[name='clientSearch']", picker).value = existing.name;
+    qs("[name='clientId']", picker).value = existing.id;
+    qs("[data-quick-client-form]", picker)?.classList.add("is-hidden");
+    qs("[name='clientId']", picker).dispatchEvent(new Event("change", { bubbles: true }));
+    return;
+  }
+  const client = {
+    id: nextId("c", "clients"),
+    name,
+    city: value("city"),
+    addressStreet: value("addressStreet"),
+    addressZip: "",
+    addressFloor: "",
+    contact: value("contact"),
+    email: value("email"),
+    phone: normalizePhoneNumber(value("phone")),
+    status: "Aktívna",
+    segment: "Ambulancia",
+    note: "Založené rýchlo pri tvorbe podpisového balíka.",
+    portalEnabled: true,
+  };
+
+  try {
+    if (dataMode === "supabase") {
+      await saveClientToSupabase(client);
+      await loadSupabaseDataIntoState();
+    } else {
+      state.clients.push(client);
+      saveState();
+    }
+    const savedClient = byId("clients", client.id) || findClientByTypedValue(name);
+    if (!savedClient) throw new Error("Ambulancia sa uložila, ale nepodarilo sa ju znova načítať.");
+    qs("[name='clientSearch']", picker).value = savedClient.name;
+    qs("[name='clientId']", picker).value = savedClient.id;
+    qs("[data-client-search-results]", picker).innerHTML = "";
+    qs("[data-quick-client-form]", picker)?.classList.add("is-hidden");
+    qs("[name='clientId']", picker).dispatchEvent(new Event("change", { bubbles: true }));
+    addAudit(dataMode === "supabase" ? "Pridaná ambulancia online" : "Pridaná ambulancia", `${savedClient.name} - rýchle založenie z podpisového balíka`);
+  } catch (error) {
+    alert(`Rýchle založenie ambulancie zlyhalo: ${error.message}`);
+  }
 }
 
 function updateLoginPreview() {
@@ -530,7 +658,7 @@ function initLogin() {
       supabaseStatus = { state: "Prihlásené", detail: `Supabase Auth prihlásil používateľa ${user.name}.` };
     } catch (error) {
       supabaseAuth = null;
-      alert(`Supabase prihlásenie zlyhalo: ${error.message}`);
+      alert(friendlyAuthError(error, "login"));
       return;
     }
 
@@ -566,7 +694,7 @@ function initLogin() {
     qs("#loginScreen").classList.remove("is-hidden");
   };
   qs("#changePasswordButton").onclick = () => {
-    alert("Online heslo sa teraz spravuje cez Supabase Auth. Zmenu hesla doplníme ako samostatnú funkciu.");
+    openChangePasswordForm(false);
   };
 }
 
@@ -624,6 +752,7 @@ function initNavigation() {
 
   qs("#globalSearch").addEventListener("input", (event) => {
     query = event.target.value.trim();
+    clientLetterFilter = "all";
     render();
   });
 
@@ -671,14 +800,10 @@ function openChangePasswordForm(required = false) {
   });
 }
 
-function savePasswordChange(event) {
+async function savePasswordChange(event) {
   event.preventDefault();
   const form = event.target;
   const values = formValues(form);
-  if (session.passwordHash !== hashPassword(values.currentPassword)) {
-    alert("Aktuálne heslo nie je správne.");
-    return;
-  }
   if ((values.newPassword || "").length < 8) {
     alert("Nové heslo musí mať aspoň 8 znakov.");
     return;
@@ -687,13 +812,35 @@ function savePasswordChange(event) {
     alert("Nové heslá sa nezhodujú.");
     return;
   }
-  const user = byId("users", session.id);
-  user.passwordHash = hashPassword(values.newPassword);
-  user.mustChangePassword = false;
-  session = user;
-  saveState();
-  closeCurrentModal(form);
-  alert("Heslo bolo zmenené.");
+  const submitButton = qs("button[type='submit']", form);
+  submitButton.disabled = true;
+  submitButton.textContent = "Ukladám heslo...";
+
+  try {
+    if (dataMode === "supabase" && hasSupabaseSettings()) {
+      await changeSupabasePassword(values.currentPassword, values.newPassword);
+    } else if (session.passwordHash !== hashPassword(values.currentPassword)) {
+      alert("Aktuálne heslo nie je správne.");
+      return;
+    }
+
+    const user = byId("users", session.id);
+    if (user) {
+      user.passwordHash = hashPassword(values.newPassword);
+      user.mustChangePassword = false;
+      session = { ...session, ...user, mustChangePassword: false };
+      saveState();
+    } else {
+      session.mustChangePassword = false;
+    }
+    closeCurrentModal(form);
+    alert("Heslo bolo zmenené.");
+  } catch (error) {
+    alert(`Zmena hesla zlyhala: ${friendlyAuthError(error, "password")}`);
+  } finally {
+    submitButton.disabled = false;
+    submitButton.textContent = "Uložiť nové heslo";
+  }
 }
 
 function setTitle(title, kicker = "DentAll CRM") {
@@ -768,7 +915,8 @@ function metric(label, value, note) {
 
 function renderClients() {
   setTitle("Ambulancie", "Klienti");
-  const clients = state.clients.filter((client) => matchesSearch(clientSearchText(client)));
+  const searchedClients = state.clients.filter((client) => matchesSearch(clientSearchText(client)));
+  const clients = searchedClients.filter((client) => clientLetterFilter === "all" || firstClientLetter(client) === clientLetterFilter);
   return `
     <section class="panel">
       <div class="panel-header">
@@ -778,8 +926,24 @@ function renderClients() {
       <div class="toolbar compact">
         <p class="form-note">Každá ambulancia má vlastný profil pre zariadenia, záruky, dokumenty a servis.</p>
       </div>
+      ${clientAlphabetNav(searchedClients)}
       ${clients.length ? clientsTable(clients) : emptyState("Nenašli sa žiadne ambulancie.")}
     </section>
+  `;
+}
+
+function firstClientLetter(client) {
+  return String(client.name || "").trim().charAt(0).toLocaleUpperCase("sk-SK") || "#";
+}
+
+function clientAlphabetNav(clients) {
+  const letters = [...new Set(clients.map(firstClientLetter))].sort((a, b) => a.localeCompare(b, "sk-SK"));
+  if (letters.length < 2) return "";
+  return `
+    <nav class="alphabet-nav" aria-label="Rýchly filter ambulancií podľa písmena">
+      <button type="button" class="${clientLetterFilter === "all" ? "is-active" : ""}" data-client-letter="all">Všetky</button>
+      ${letters.map((letter) => `<button type="button" class="${clientLetterFilter === letter ? "is-active" : ""}" data-client-letter="${letter}">${letter}</button>`).join("")}
+    </nav>
   `;
 }
 
@@ -834,7 +998,7 @@ function devicesTable(devices) {
               <td data-label="Ambulancia">${clientName(device.clientId)}</td>
               <td data-label="Sériové číslo">${device.serial}</td>
               <td data-label="Inštalácia">${formatDate(device.installed)}</td>
-              <td data-label="Záruka">${formatDate(device.warrantyUntil)}</td>
+              <td data-label="Záruka">${formatOptionalDate(device.warrantyUntil)}</td>
               <td data-label="Fakturácia">
                 <span class="status-pill ${isDeviceInvoiced(device) ? "status-ok" : "status-planned"}">${isDeviceInvoiced(device) ? "Fakturované" : "Bez FA"}</span>
                 ${isAdmin() && device.invoiceFile ? `<br><small>${invoiceLink(device)}</small>` : ""}
@@ -1065,7 +1229,7 @@ function clientPortalHtml(clientId, showAccessCode = false) {
                 <div><dt>Sériové číslo</dt><dd>${device.serial || "Doplniť"}</dd></div>
                 <div><dt>Typ</dt><dd>${device.type || "Doplniť"}</dd></div>
                 <div><dt>Inštalácia</dt><dd>${formatDate(device.installed)}</dd></div>
-                <div><dt>Záruka do</dt><dd>${formatDate(device.warrantyUntil)}</dd></div>
+                <div><dt>Záruka do</dt><dd>${formatOptionalDate(device.warrantyUntil)}</dd></div>
                 <div><dt>Umiestnenie</dt><dd>${device.location || "Doplniť"}</dd></div>
                 <div><dt>Fakturácia</dt><dd>
                   <span class="status-pill ${isDeviceInvoiced(device) ? "status-ok" : "status-planned"}">${isDeviceInvoiced(device) ? "Fakturované" : "Zatiaľ bez FA"}</span>
@@ -1514,6 +1678,27 @@ async function supabaseAuthGetUser(token) {
   return payload;
 }
 
+async function supabaseAuthUpdateUser(token, body) {
+  const config = supabaseConfig();
+  if (!config.url || !config.anonKey) throw new Error("Chýba Supabase URL alebo anon public key.");
+  const response = await fetch(`${String(config.url).replace(/\/$/, "")}/auth/v1/user`, {
+    method: "PUT",
+    headers: {
+      apikey: config.anonKey,
+      Authorization: `Bearer ${token}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(body),
+  });
+  const payload = await response.json().catch(() => null);
+  if (!response.ok) {
+    const error = new Error(payload?.msg || payload?.message || payload?.error_description || response.statusText);
+    error.status = response.status;
+    throw error;
+  }
+  return payload;
+}
+
 function saveSupabaseAuth(auth) {
   if (!auth?.access_token) return;
   localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(auth));
@@ -1631,6 +1816,31 @@ async function loginWithSupabase(email, password) {
     throw new Error(`Prihlásenie prešlo pre ${auth.user?.email || email}, auth id ${authUserId}, ale REST/RLS nevrátil profil z users_profile.`);
   }
   return profileToSession(profiles[0], auth.user);
+}
+
+async function changeSupabasePassword(currentPassword, newPassword) {
+  if (!session?.email) throw new Error("Chýba e-mail prihláseného používateľa.");
+  let auth = supabaseAuth || savedSupabaseAuth();
+  if (!auth?.access_token) throw new Error("Nie je aktívne online prihlásenie. Odhláste sa a prihláste sa znova.");
+  try {
+    await supabaseAuthUpdateUser(auth.access_token, {
+      password: newPassword,
+      current_password: currentPassword,
+    });
+  } catch (error) {
+    if (error.status !== 401 || !auth.refresh_token) throw error;
+    auth = await refreshSupabaseAuth(auth);
+    await supabaseAuthUpdateUser(auth.access_token, {
+      password: newPassword,
+      current_password: currentPassword,
+    });
+  }
+  const refreshedLogin = await supabaseAuthRequest("token?grant_type=password", {
+    email: session.email,
+    password: newPassword,
+  });
+  supabaseAuth = refreshedLogin;
+  saveSupabaseAuth(refreshedLogin);
 }
 
 async function restoreSupabaseSession() {
@@ -2294,7 +2504,11 @@ function bindViewActions(scope) {
   qsa("[data-device-profile]", scope).forEach((button) => button.addEventListener("click", () => openDeviceProfile(button.dataset.deviceProfile)));
   qsa("[data-edit-client]", scope).forEach((button) => button.addEventListener("click", () => openClientForm(button.dataset.editClient)));
   qsa("[data-edit-device]", scope).forEach((button) => button.addEventListener("click", () => openDeviceForm(button.dataset.editDevice)));
-  qsa("[data-delete-device]", scope).forEach((button) => button.addEventListener("click", () => deleteDevice(button.dataset.deleteDevice)));
+  qsa("[data-delete-device]", scope).forEach((button) => button.addEventListener("click", () => deleteDevice(button.dataset.deleteDevice, button.dataset.returnClient || "")));
+  qsa("[data-client-letter]", scope).forEach((button) => button.addEventListener("click", () => {
+    clientLetterFilter = button.dataset.clientLetter || "all";
+    render();
+  }));
   qsa("[data-start-handover-device]", scope).forEach((button) => button.addEventListener("click", () => openHandoverWorkflow(button.dataset.startHandoverDevice)));
   qsa("[data-edit-service]", scope).forEach((button) => button.addEventListener("click", () => openServiceForm(button.dataset.editService)));
   qsa("[data-open-service-protocol]", scope).forEach((button) => button.addEventListener("click", () => openServiceProtocolWorkflow(button.dataset.openServiceProtocol)));
@@ -2384,13 +2598,13 @@ function openClientProfile(id) {
         ${devices.length ? devices.map((device) => `
           <article class="timeline-item">
             <strong><button class="link-button" type="button" data-device-profile="${device.id}">${deviceName(device.id)}</button></strong>
-            <small>SN ${device.serial} - záruka do ${formatDate(device.warrantyUntil)}</small>
+            <small>SN ${cleanImportedValue(device.serial) || "neuvedené"} - ${device.warrantyUntil ? `záruka do ${formatOptionalDate(device.warrantyUntil)}` : "záruka neuvedená"}</small>
             <span class="status-pill ${statusClass(device.status)}">${device.status}</span>
             <span class="status-pill ${isDeviceInvoiced(device) ? "status-ok" : "status-planned"}">${isDeviceInvoiced(device) ? "Fakturované" : "Bez FA"}</span>
             <div class="button-row">
               <button class="ghost-action" type="button" data-edit-device="${device.id}">Upraviť zariadenie</button>
               ${deviceHasSignedHandover(device) ? "" : `<button class="secondary-action" type="button" data-start-handover-device="${device.id}">Podpis dokumentov</button>`}
-              <button class="danger-action" type="button" data-delete-device="${device.id}">Vymazať</button>
+              <button class="danger-action" type="button" data-delete-device="${device.id}" data-return-client="${client.id}">Vymazať</button>
             </div>
           </article>
         `).join("") : emptyState("Ambulancia zatiaľ nemá zariadenia.")}
@@ -2447,7 +2661,7 @@ function openDeviceProfile(id) {
         <h3>Záruka a dokumenty</h3>
         <dl class="definition-list">
           <div><dt>Inštalácia</dt><dd>${formatDate(device.installed)}</dd></div>
-          <div><dt>Záruka do</dt><dd>${formatDate(device.warrantyUntil)}</dd></div>
+          <div><dt>Záruka do</dt><dd>${formatOptionalDate(device.warrantyUntil)}</dd></div>
         </dl>
         <ul>
           ${device.documents.map((documentName) => `<li>${documentName}</li>`).join("")}
@@ -2827,7 +3041,7 @@ function openDocumentPacketForm() {
         <option>Demontáž</option>
         <option>Servis</option>
       </select></label>
-      ${clientPicker()}
+      ${clientPicker("", true)}
       <label class="full device-search-field">
         <span>Zariadenie</span>
         <input name="deviceSearch" type="search" placeholder="Po výbere ambulancie píšte SN, model, typ alebo umiestnenie...">
@@ -3658,7 +3872,7 @@ function closeCurrentModal(form) {
   form.closest(".modal-backdrop").remove();
 }
 
-async function deleteDevice(id) {
+async function deleteDevice(id, returnClientId = "") {
   const device = byId("devices", id);
   if (!device) return;
 
@@ -3672,6 +3886,7 @@ async function deleteDevice(id) {
       addAudit("Vymazané zariadenie online", label);
       qsa(".modal-backdrop").forEach((modal) => modal.remove());
       render();
+      if (returnClientId && byId("clients", returnClientId)) openClientProfile(returnClientId);
     } catch (error) {
       alert(`Vymazanie zariadenia zo Supabase zlyhalo: ${error.message}`);
     }
@@ -3687,6 +3902,7 @@ async function deleteDevice(id) {
   saveState();
   qsa(".modal-backdrop").forEach((modal) => modal.remove());
   render();
+  if (returnClientId && byId("clients", returnClientId)) openClientProfile(returnClientId);
 }
 
 async function deleteInventoryItem(id) {
@@ -3780,6 +3996,9 @@ async function saveDevice(event) {
     .map((item) => item.trim())
     .filter(Boolean);
   delete values.documentsText;
+  ["type", "brand", "model", "serial", "location"].forEach((key) => {
+    values[key] = cleanImportedValue(values[key]);
+  });
   const editId = event.target.dataset.editId;
   const existingDevice = editId ? byId("devices", editId) : {};
   if (isAdmin()) {

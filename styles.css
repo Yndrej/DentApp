@@ -959,6 +959,35 @@ tbody tr:hover {
   position: relative;
 }
 
+.quick-client-form {
+  margin-top: 10px;
+  padding: 12px;
+  border: 1px solid rgba(223, 11, 24, 0.18);
+  border-radius: var(--radius);
+  background: rgba(223, 11, 24, 0.04);
+}
+
+.quick-client-form > strong {
+  display: block;
+  margin-bottom: 8px;
+}
+
+.quick-client-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.quick-client-grid input {
+  width: 100%;
+  min-height: 40px;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: #fff;
+}
+
 .field-hint {
   color: var(--muted);
   font-size: 12px;
@@ -1687,7 +1716,8 @@ tbody tr:hover {
   .portal-device-grid,
   .summary-grid,
   .signature-pad-grid,
-  .signature-grid {
+  .signature-grid,
+  .quick-client-grid {
     grid-template-columns: 1fr;
   }
 
