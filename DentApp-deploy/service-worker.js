@@ -1,4 +1,4 @@
-const DENTAPP_CACHE = "dentapp-shell-v2";
+const DENTAPP_CACHE = "dentapp-shell-v3";
 const SHELL_FILES = [
   "/",
   "/index.html",
