@@ -8,7 +8,7 @@ const dist = join(root, "dist");
 rmSync(dist, { recursive: true, force: true });
 mkdirSync(dist, { recursive: true });
 
-for (const file of ["index.html", "app.js", "styles.css", "data.js", "manifest.json", "supabase-config.js", "service-worker.js"]) {
+for (const file of ["index.html", "app.js", "styles.css", "data.js", "manifest.json", "supabase-config.js", "service-worker.js", "favicon.ico"]) {
   cpSync(join(root, file), join(dist, file));
 }
 
