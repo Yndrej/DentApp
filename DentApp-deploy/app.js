@@ -99,6 +99,7 @@ let supabaseAuth = null;
 let portalSessionClientId = "";
 let activeView = "dashboard";
 let query = "";
+let clientLetterFilter = "all";
 let supabaseStatus = {
   state: "Neskontrolované",
   detail: "Supabase projekt je nakonfigurovaný, spustite test pripojenia.",
@@ -661,6 +662,7 @@ function initNavigation() {
 
   qs("#globalSearch").addEventListener("input", (event) => {
     query = event.target.value.trim();
+    clientLetterFilter = "all";
     render();
   });
 
@@ -823,7 +825,8 @@ function metric(label, value, note) {
 
 function renderClients() {
   setTitle("Ambulancie", "Klienti");
-  const clients = state.clients.filter((client) => matchesSearch(clientSearchText(client)));
+  const searchedClients = state.clients.filter((client) => matchesSearch(clientSearchText(client)));
+  const clients = searchedClients.filter((client) => clientLetterFilter === "all" || firstClientLetter(client) === clientLetterFilter);
   return `
     <section class="panel">
       <div class="panel-header">
@@ -833,8 +836,24 @@ function renderClients() {
       <div class="toolbar compact">
         <p class="form-note">Každá ambulancia má vlastný profil pre zariadenia, záruky, dokumenty a servis.</p>
       </div>
+      ${clientAlphabetNav(searchedClients)}
       ${clients.length ? clientsTable(clients) : emptyState("Nenašli sa žiadne ambulancie.")}
     </section>
+  `;
+}
+
+function firstClientLetter(client) {
+  return String(client.name || "").trim().charAt(0).toLocaleUpperCase("sk-SK") || "#";
+}
+
+function clientAlphabetNav(clients) {
+  const letters = [...new Set(clients.map(firstClientLetter))].sort((a, b) => a.localeCompare(b, "sk-SK"));
+  if (letters.length < 2) return "";
+  return `
+    <nav class="alphabet-nav" aria-label="Rýchly filter ambulancií podľa písmena">
+      <button type="button" class="${clientLetterFilter === "all" ? "is-active" : ""}" data-client-letter="all">Všetky</button>
+      ${letters.map((letter) => `<button type="button" class="${clientLetterFilter === letter ? "is-active" : ""}" data-client-letter="${letter}">${letter}</button>`).join("")}
+    </nav>
   `;
 }
 
@@ -2395,7 +2414,11 @@ function bindViewActions(scope) {
   qsa("[data-device-profile]", scope).forEach((button) => button.addEventListener("click", () => openDeviceProfile(button.dataset.deviceProfile)));
   qsa("[data-edit-client]", scope).forEach((button) => button.addEventListener("click", () => openClientForm(button.dataset.editClient)));
   qsa("[data-edit-device]", scope).forEach((button) => button.addEventListener("click", () => openDeviceForm(button.dataset.editDevice)));
-  qsa("[data-delete-device]", scope).forEach((button) => button.addEventListener("click", () => deleteDevice(button.dataset.deleteDevice)));
+  qsa("[data-delete-device]", scope).forEach((button) => button.addEventListener("click", () => deleteDevice(button.dataset.deleteDevice, button.dataset.returnClient || "")));
+  qsa("[data-client-letter]", scope).forEach((button) => button.addEventListener("click", () => {
+    clientLetterFilter = button.dataset.clientLetter || "all";
+    render();
+  }));
   qsa("[data-start-handover-device]", scope).forEach((button) => button.addEventListener("click", () => openHandoverWorkflow(button.dataset.startHandoverDevice)));
   qsa("[data-edit-service]", scope).forEach((button) => button.addEventListener("click", () => openServiceForm(button.dataset.editService)));
   qsa("[data-open-service-protocol]", scope).forEach((button) => button.addEventListener("click", () => openServiceProtocolWorkflow(button.dataset.openServiceProtocol)));
@@ -2491,7 +2514,7 @@ function openClientProfile(id) {
             <div class="button-row">
               <button class="ghost-action" type="button" data-edit-device="${device.id}">Upraviť zariadenie</button>
               ${deviceHasSignedHandover(device) ? "" : `<button class="secondary-action" type="button" data-start-handover-device="${device.id}">Podpis dokumentov</button>`}
-              <button class="danger-action" type="button" data-delete-device="${device.id}">Vymazať</button>
+              <button class="danger-action" type="button" data-delete-device="${device.id}" data-return-client="${client.id}">Vymazať</button>
             </div>
           </article>
         `).join("") : emptyState("Ambulancia zatiaľ nemá zariadenia.")}
@@ -3759,7 +3782,7 @@ function closeCurrentModal(form) {
   form.closest(".modal-backdrop").remove();
 }
 
-async function deleteDevice(id) {
+async function deleteDevice(id, returnClientId = "") {
   const device = byId("devices", id);
   if (!device) return;
 
@@ -3773,6 +3796,7 @@ async function deleteDevice(id) {
       addAudit("Vymazané zariadenie online", label);
       qsa(".modal-backdrop").forEach((modal) => modal.remove());
       render();
+      if (returnClientId && byId("clients", returnClientId)) openClientProfile(returnClientId);
     } catch (error) {
       alert(`Vymazanie zariadenia zo Supabase zlyhalo: ${error.message}`);
     }
@@ -3788,6 +3812,7 @@ async function deleteDevice(id) {
   saveState();
   qsa(".modal-backdrop").forEach((modal) => modal.remove());
   render();
+  if (returnClientId && byId("clients", returnClientId)) openClientProfile(returnClientId);
 }
 
 async function deleteInventoryItem(id) {

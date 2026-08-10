@@ -681,6 +681,43 @@ textarea:focus {
   margin-top: 12px;
 }
 
+.alphabet-nav {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 0 0 12px;
+  padding: 8px;
+  background: rgba(255, 255, 255, 0.92);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+}
+
+.alphabet-nav button {
+  min-width: 32px;
+  min-height: 30px;
+  padding: 4px 8px;
+  border: 1px solid transparent;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.alphabet-nav button:first-child {
+  min-width: 58px;
+}
+
+.alphabet-nav button:hover,
+.alphabet-nav button.is-active {
+  color: var(--brand-red);
+  background: rgba(223, 11, 24, 0.08);
+  border-color: rgba(223, 11, 24, 0.2);
+}
+
 .table-shell {
   overflow-x: auto;
 }
