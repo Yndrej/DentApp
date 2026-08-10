@@ -108,6 +108,11 @@ let loginPreviewTotals = savedLoginPreviewTotals();
 const qs = (selector, scope = document) => scope.querySelector(selector);
 const qsa = (selector, scope = document) => [...scope.querySelectorAll(selector)];
 
+function hasSupabaseSettings() {
+  const config = supabaseConfig();
+  return Boolean(config.url && config.anonKey);
+}
+
 function escapeHtml(value = "") {
   return String(value)
     .replaceAll("&", "&amp;")
@@ -688,7 +693,7 @@ async function savePasswordChange(event) {
   submitButton.textContent = "Ukladám heslo...";
 
   try {
-    if (supabaseConfigured()) {
+    if (dataMode === "supabase" && hasSupabaseSettings()) {
       await changeSupabasePassword(values.currentPassword, values.newPassword);
     } else if (session.passwordHash !== hashPassword(values.currentPassword)) {
       alert("Aktuálne heslo nie je správne.");
