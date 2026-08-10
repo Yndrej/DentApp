@@ -566,7 +566,7 @@ function initLogin() {
     qs("#loginScreen").classList.remove("is-hidden");
   };
   qs("#changePasswordButton").onclick = () => {
-    alert("Online heslo sa teraz spravuje cez Supabase Auth. Zmenu hesla doplníme ako samostatnú funkciu.");
+    openChangePasswordForm(false);
   };
 }
 
