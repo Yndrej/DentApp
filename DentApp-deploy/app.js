@@ -1545,7 +1545,11 @@ async function supabaseAuthUpdateUser(token, body) {
     body: JSON.stringify(body),
   });
   const payload = await response.json().catch(() => null);
-  if (!response.ok) throw new Error(payload?.msg || payload?.message || payload?.error_description || response.statusText);
+  if (!response.ok) {
+    const error = new Error(payload?.msg || payload?.message || payload?.error_description || response.statusText);
+    error.status = response.status;
+    throw error;
+  }
   return payload;
 }
 
@@ -1670,15 +1674,27 @@ async function loginWithSupabase(email, password) {
 
 async function changeSupabasePassword(currentPassword, newPassword) {
   if (!session?.email) throw new Error("Chýba e-mail prihláseného používateľa.");
-  const auth = await supabaseAuthRequest("token?grant_type=password", {
+  let auth = supabaseAuth || savedSupabaseAuth();
+  if (!auth?.access_token) throw new Error("Nie je aktívne online prihlásenie. Odhláste sa a prihláste sa znova.");
+  try {
+    await supabaseAuthUpdateUser(auth.access_token, {
+      password: newPassword,
+      current_password: currentPassword,
+    });
+  } catch (error) {
+    if (error.status !== 401 || !auth.refresh_token) throw error;
+    auth = await refreshSupabaseAuth(auth);
+    await supabaseAuthUpdateUser(auth.access_token, {
+      password: newPassword,
+      current_password: currentPassword,
+    });
+  }
+  const refreshedLogin = await supabaseAuthRequest("token?grant_type=password", {
     email: session.email,
-    password: currentPassword,
+    password: newPassword,
   });
-  const activeToken = auth.access_token || supabaseAuth?.access_token;
-  if (!activeToken) throw new Error("Nepodarilo sa overiť aktuálne prihlásenie.");
-  await supabaseAuthUpdateUser(activeToken, { password: newPassword });
-  supabaseAuth = auth;
-  saveSupabaseAuth(auth);
+  supabaseAuth = refreshedLogin;
+  saveSupabaseAuth(refreshedLogin);
 }
 
 async function restoreSupabaseSession() {
