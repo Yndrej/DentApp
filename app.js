@@ -671,14 +671,10 @@ function openChangePasswordForm(required = false) {
   });
 }
 
-function savePasswordChange(event) {
+async function savePasswordChange(event) {
   event.preventDefault();
   const form = event.target;
   const values = formValues(form);
-  if (session.passwordHash !== hashPassword(values.currentPassword)) {
-    alert("Aktuálne heslo nie je správne.");
-    return;
-  }
   if ((values.newPassword || "").length < 8) {
     alert("Nové heslo musí mať aspoň 8 znakov.");
     return;
@@ -687,13 +683,35 @@ function savePasswordChange(event) {
     alert("Nové heslá sa nezhodujú.");
     return;
   }
-  const user = byId("users", session.id);
-  user.passwordHash = hashPassword(values.newPassword);
-  user.mustChangePassword = false;
-  session = user;
-  saveState();
-  closeCurrentModal(form);
-  alert("Heslo bolo zmenené.");
+  const submitButton = qs("button[type='submit']", form);
+  submitButton.disabled = true;
+  submitButton.textContent = "Ukladám heslo...";
+
+  try {
+    if (supabaseConfigured()) {
+      await changeSupabasePassword(values.currentPassword, values.newPassword);
+    } else if (session.passwordHash !== hashPassword(values.currentPassword)) {
+      alert("Aktuálne heslo nie je správne.");
+      return;
+    }
+
+    const user = byId("users", session.id);
+    if (user) {
+      user.passwordHash = hashPassword(values.newPassword);
+      user.mustChangePassword = false;
+      session = { ...session, ...user, mustChangePassword: false };
+      saveState();
+    } else {
+      session.mustChangePassword = false;
+    }
+    closeCurrentModal(form);
+    alert("Heslo bolo zmenené.");
+  } catch (error) {
+    alert(`Zmena hesla zlyhala: ${error.message}`);
+  } finally {
+    submitButton.disabled = false;
+    submitButton.textContent = "Uložiť nové heslo";
+  }
 }
 
 function setTitle(title, kicker = "DentAll CRM") {
@@ -1514,6 +1532,23 @@ async function supabaseAuthGetUser(token) {
   return payload;
 }
 
+async function supabaseAuthUpdateUser(token, body) {
+  const config = supabaseConfig();
+  if (!config.url || !config.anonKey) throw new Error("Chýba Supabase URL alebo anon public key.");
+  const response = await fetch(`${String(config.url).replace(/\/$/, "")}/auth/v1/user`, {
+    method: "PUT",
+    headers: {
+      apikey: config.anonKey,
+      Authorization: `Bearer ${token}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(body),
+  });
+  const payload = await response.json().catch(() => null);
+  if (!response.ok) throw new Error(payload?.msg || payload?.message || payload?.error_description || response.statusText);
+  return payload;
+}
+
 function saveSupabaseAuth(auth) {
   if (!auth?.access_token) return;
   localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(auth));
@@ -1631,6 +1666,19 @@ async function loginWithSupabase(email, password) {
     throw new Error(`Prihlásenie prešlo pre ${auth.user?.email || email}, auth id ${authUserId}, ale REST/RLS nevrátil profil z users_profile.`);
   }
   return profileToSession(profiles[0], auth.user);
+}
+
+async function changeSupabasePassword(currentPassword, newPassword) {
+  if (!session?.email) throw new Error("Chýba e-mail prihláseného používateľa.");
+  const auth = await supabaseAuthRequest("token?grant_type=password", {
+    email: session.email,
+    password: currentPassword,
+  });
+  const activeToken = auth.access_token || supabaseAuth?.access_token;
+  if (!activeToken) throw new Error("Nepodarilo sa overiť aktuálne prihlásenie.");
+  await supabaseAuthUpdateUser(activeToken, { password: newPassword });
+  supabaseAuth = auth;
+  saveSupabaseAuth(auth);
 }
 
 async function restoreSupabaseSession() {
