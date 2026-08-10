@@ -1,4 +1,4 @@
-const DENTAPP_CACHE = "dentapp-shell-v3";
+const DENTAPP_CACHE = "dentapp-shell-v4";
 const SHELL_FILES = [
   "/",
   "/index.html",
@@ -7,6 +7,7 @@ const SHELL_FILES = [
   "/data.js",
   "/supabase-config.js",
   "/manifest.json",
+  "/assets/apple-touch-icon.png",
   "/assets/icon-192.png",
   "/assets/icon-512.png",
 ];
