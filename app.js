@@ -284,11 +284,11 @@ function findClientByPortalCode(value = "") {
 }
 
 function statusClass(value) {
-  const normalized = value.toLowerCase();
+  const normalized = String(value || "").toLowerCase();
   if (["ok", "aktívna", "hotové"].includes(normalized)) return "status-ok";
-  if (["pozor", "záruka končí", "prebieha", "stredná", "importované", "na podpis", "na ceste", "čaká na diel", "na fakturáciu", "exportované"].includes(normalized)) return "status-warning";
+  if (["pozor", "záruka končí", "prebieha", "stredná", "importované", "na podpis", "na ceste", "čaká na diel", "na fakturáciu", "exportované", "rezervované"].includes(normalized)) return "status-warning";
   if (["riziko", "vysoká"].includes(normalized)) return "status-critical";
-  if (["nová", "naplánovaná", "naplánované", "nízka", "pripravené"].includes(normalized)) return "status-planned";
+  if (["nová", "naplánovaná", "naplánované", "nízka", "pripravené", "skladom"].includes(normalized)) return "status-planned";
   if (["podpísané", "odovzdané", "fakturované"].includes(normalized)) return "status-ok";
   return "status-active";
 }
@@ -359,7 +359,11 @@ function matchesServiceStatusFilter(service) {
 }
 
 function clientName(id) {
-  return byId("clients", id)?.name || "Neznámy klient";
+  return id ? (byId("clients", id)?.name || "Neznámy klient") : "Sklad / nepriradené";
+}
+
+function isStockDevice(device) {
+  return !device?.clientId;
 }
 
 function deviceName(id) {
@@ -430,12 +434,12 @@ function imagePreview(src, alt) {
     : `<div class="entity-photo placeholder">Bez fotografie</div>`;
 }
 
-function clientPicker(selectedId = "", allowCreate = false) {
+function clientPicker(selectedId = "", allowCreate = false, required = true) {
   const selected = byId("clients", selectedId);
   return `
     <label class="client-picker" data-allow-create-client="${allowCreate ? "true" : "false"}">
       <span>Ambulancia</span>
-      <input name="clientSearch" list="clientOptions" placeholder="Začnite písať názov, mesto alebo ulicu..." value="${escapeHtml(selected?.name || "")}" required>
+      <input name="clientSearch" list="clientOptions" placeholder="Začnite písať názov, mesto alebo ulicu..." value="${escapeHtml(selected?.name || "")}" ${required ? "required" : ""}>
       <input type="hidden" name="clientId" value="${escapeHtml(selectedId)}">
       <datalist id="clientOptions">
         ${state.clients.map((client) => `<option value="${escapeHtml(client.name)}" label="${escapeHtml(clientAddress(client))}"></option>`).join("")}
@@ -458,7 +462,7 @@ function clientPicker(selectedId = "", allowCreate = false) {
           </div>
         </div>
       ` : ""}
-      <small class="field-hint">Vyberte ambulanciu zo zobrazených zhôd.</small>
+      <small class="field-hint">${required ? "Vyberte ambulanciu zo zobrazených zhôd." : "Nechajte prázdne, ak je zariadenie zatiaľ voľné na sklade."}</small>
     </label>
   `;
 }
@@ -974,7 +978,7 @@ function clientsTable(clients) {
 
 function renderDevices() {
   setTitle("Zariadenia", "Majetok klientov");
-  const devices = state.devices.filter((device) => matchesSearch(deviceName(device.id), device.serial, clientName(device.clientId), device.type, device.location, (device.documents || []).join(" ")));
+  const devices = state.devices.filter((device) => matchesSearch(deviceName(device.id), device.serial, clientName(device.clientId), device.type, device.location, device.status, (device.documents || []).join(" ")));
   return `
     <section class="panel">
       <div class="panel-header">
@@ -1007,7 +1011,7 @@ function devicesTable(devices) {
               <td class="row-actions" data-label="Akcia">
                 <button class="secondary-action" type="button" data-device-profile="${device.id}">Profil</button>
                 <button class="ghost-action" type="button" data-edit-device="${device.id}">Upraviť</button>
-                ${deviceHasSignedHandover(device) ? "" : `<button class="ghost-action" type="button" data-start-handover-device="${device.id}">Podpis</button>`}
+                ${device.clientId && !deviceHasSignedHandover(device) ? `<button class="ghost-action" type="button" data-start-handover-device="${device.id}">Podpis</button>` : ""}
                 <button class="danger-action" type="button" data-delete-device="${device.id}">Vymazať</button>
               </td>
             </tr>
@@ -1940,7 +1944,7 @@ async function saveClientToSupabase(client) {
 function mapDeviceForSupabase(device, clientIdByLegacy) {
   return {
     legacy_id: device.id,
-    client_id: clientIdByLegacy.get(device.clientId),
+    client_id: device.clientId ? (clientIdByLegacy.get(device.clientId) || (isUuid(device.clientId) ? device.clientId : null)) : null,
     type: device.type || "",
     brand: device.brand || "",
     model: device.model || "",
@@ -1982,11 +1986,11 @@ async function saveDeviceToSupabase(device) {
   if (dataMode !== "supabase") return null;
   if (!supabaseAuth?.access_token) throw new Error("Najprv sa prihláste cez Supabase Auth.");
   let payload = devicePayloadForSupabase(device);
-  if (!payload.client_id) {
+  if (device.clientId && !payload.client_id) {
     await loadSupabaseDataIntoState();
     payload = devicePayloadForSupabase(device);
   }
-  if (!payload.client_id) throw new Error("Zariadenie nemá online ambulanciu.");
+  if (device.clientId && !payload.client_id) throw new Error("Zariadenie nemá online ambulanciu.");
   try {
     const rows = await upsertSupabaseRows("devices", [payload]);
     return rows[0] || null;
@@ -2653,7 +2657,7 @@ function openDeviceProfile(id) {
         </dl>
         <div class="button-row">
           <button class="secondary-action" type="button" data-edit-device="${device.id}">Upraviť zariadenie</button>
-          ${deviceHasSignedHandover(device) ? `<button class="ghost-action" type="button" data-open-signed-document="${device.documentRecords.find((record) => record.documentType !== "service" && canOpenSignedDocument(record))?.id}">Otvoriť odovzdanie</button>` : `<button class="ghost-action" type="button" data-start-handover-device="${device.id}">Pripraviť podpis</button>`}
+          ${deviceHasSignedHandover(device) ? `<button class="ghost-action" type="button" data-open-signed-document="${device.documentRecords.find((record) => record.documentType !== "service" && canOpenSignedDocument(record))?.id}">Otvoriť odovzdanie</button>` : (device.clientId ? `<button class="ghost-action" type="button" data-start-handover-device="${device.id}">Pripraviť podpis</button>` : "")}
           <button class="danger-action" type="button" data-delete-device="${device.id}">Vymazať zariadenie</button>
         </div>
       </section>
@@ -2807,7 +2811,7 @@ function openDeviceForm(id = "", presetClientId = "") {
   const selectedClientId = device.clientId || presetClientId;
   openModal(id ? "Upraviť zariadenie" : "Pridať zariadenie", `
     <form class="form-grid" id="deviceForm" data-edit-id="${id}">
-      ${clientPicker(selectedClientId)}
+      ${clientPicker(selectedClientId, false, false)}
       ${input("type", "Typ", "CBCT", "text", device.type)}
       ${input("brand", "Značka", "Vatech", "text", device.brand)}
       ${input("model", "Model", "Green X", "text", device.model)}
@@ -2816,7 +2820,7 @@ function openDeviceForm(id = "", presetClientId = "") {
       ${input("installed", "Dátum inštalácie", "", "date", device.installed, false)}
       ${input("warrantyUntil", "Záruka do", "", "date", device.warrantyUntil, false)}
       <label><span>Stav</span><select name="status">
-        ${["OK", "Importované", "Servis", "Pozor", "Záruka končí", "Vyradené"].map((status) => `<option ${device.status === status ? "selected" : ""}>${status}</option>`).join("")}
+        ${["Skladom", "Rezervované", "OK", "Importované", "Servis", "Pozor", "Záruka končí", "Vyradené"].map((status) => `<option ${device.status === status ? "selected" : ""}>${status}</option>`).join("")}
       </select></label>
       <label class="full"><span>Dokumenty / poznámka</span><textarea name="documentsText">${escapeHtml((device.documents || []).join("\n"))}</textarea></label>
       <label class="full"><span>Fotografia zariadenia</span><input name="photoFile" type="file" accept="image/*"></label>
@@ -2941,8 +2945,13 @@ function deviceSearchText(device) {
     device.model,
     device.type,
     device.location,
+    device.status,
     clientName(device.clientId)
   ].filter(Boolean).join(" ").toLowerCase();
+}
+
+function isDeviceSelectableForPacket(device, clientId) {
+  return Boolean(device && (device.clientId === clientId || isStockDevice(device)));
 }
 
 function initDocumentPacketDevicePicker(form) {
@@ -2986,7 +2995,7 @@ function initDocumentPacketDevicePicker(form) {
     const clientId = clientIdInput.value || findClientByTypedValue(clientInput.value)?.id || "";
     const term = deviceSearchInput.value.trim().toLowerCase();
     const devices = state.devices
-      .filter((device) => device.clientId === clientId)
+      .filter((device) => isDeviceSelectableForPacket(device, clientId))
       .filter((device) => !selectedIds.has(device.id))
       .filter((device) => !term || deviceSearchText(device).includes(term))
       .slice(0, 8);
@@ -3002,7 +3011,7 @@ function initDocumentPacketDevicePicker(form) {
     results.innerHTML = devices.map((device) => `
       <button class="search-result-button" type="button" data-pick-packet-device="${device.id}">
         <strong>${deviceLabel(device)}</strong>
-        <small>${device.type || "Typ nedoplnený"}${device.location ? ` - ${device.location}` : ""}</small>
+        <small>${isStockDevice(device) ? "Voľné zariadenie zo skladu" : clientName(device.clientId)}${device.type ? ` - ${device.type}` : ""}${device.location ? ` - ${device.location}` : ""}</small>
       </button>
     `).join("");
     qsa("[data-pick-packet-device]", results).forEach((button) => {
@@ -3092,10 +3101,19 @@ function openHandoverPacketWorkflow(packetId) {
 function openHandoverWorkflow(deviceId, packetId = "") {
   const initialDevice = byId("devices", deviceId);
   if (!initialDevice) return;
-  const client = byId("clients", initialDevice.clientId);
-  const clientDevices = getClientDevices(client.id);
   const packet = packetId ? findDocumentRecord(packetId) : null;
+  const client = byId("clients", packet?.clientId || initialDevice.clientId);
+  if (!client) {
+    alert("Najprv vytvorte podpisový balík a vyberte ambulanciu, ku ktorej sa zariadenie odovzdá.");
+    return;
+  }
   const packetDeviceIds = new Set(packet?.deviceIds?.length ? packet.deviceIds : (packet?.deviceId ? [packet.deviceId] : [deviceId]));
+  const clientDevices = [
+    ...getClientDevices(client.id),
+    ...[...packetDeviceIds]
+      .map((id) => byId("devices", id))
+      .filter((device) => device && isStockDevice(device)),
+  ].filter((device, index, list) => list.findIndex((item) => item.id === device.id) === index);
   const today = new Date().toISOString().slice(0, 10);
   const handoverDate = packet?.due || packet?.date || today;
 
@@ -3978,10 +3996,6 @@ async function saveDevice(event) {
   const form = event.target;
   const values = formValues(form);
   const clientId = selectedClientId(form);
-  if (!clientId) {
-    alert("Vyberte ambulanciu zo zoznamu zhôd.");
-    return;
-  }
   values.clientId = clientId;
   delete values.clientSearch;
   const photo = await fileToDataUrl(qs("[name='photoFile']", form)?.files?.[0]);
@@ -3999,6 +4013,9 @@ async function saveDevice(event) {
   ["type", "brand", "model", "serial", "location"].forEach((key) => {
     values[key] = cleanImportedValue(values[key]);
   });
+  if (!values.clientId && !values.status) values.status = "Skladom";
+  if (!values.clientId && !["Skladom", "Rezervované", "Vyradené"].includes(values.status)) values.status = "Skladom";
+  if (values.clientId && values.status === "Skladom") values.status = "OK";
   const editId = event.target.dataset.editId;
   const existingDevice = editId ? byId("devices", editId) : {};
   if (isAdmin()) {
@@ -4368,9 +4385,9 @@ async function saveDocumentPacket(event) {
   const deviceIds = qsa("[name='deviceIds']", form).map((input) => input.value);
   const invalidDevice = deviceIds
     .map((id) => byId("devices", id))
-    .find((device) => !device || device.clientId !== clientId);
+    .find((device) => !isDeviceSelectableForPacket(device, clientId));
   if (invalidDevice) {
-    alert("Vybrané zariadenia musia patriť k zvolenej ambulancii.");
+    alert("Vybrané zariadenia musia patriť k zvolenej ambulancii alebo byť voľné na sklade.");
     return;
   }
   values.clientId = clientId;
@@ -4389,10 +4406,17 @@ async function saveDocumentPacket(event) {
     createdAt: new Date().toISOString().slice(0, 10),
     createdBy: session?.id || "",
   };
+  const stockDevicesToReserve = deviceIds
+    .map((id) => byId("devices", id))
+    .filter((device) => isStockDevice(device) && device.status !== "Rezervované");
 
   if (dataMode === "supabase") {
     try {
       await saveDocumentPacketToSupabase(packet);
+      await Promise.all(stockDevicesToReserve.map((device) => {
+        device.status = "Rezervované";
+        return saveDeviceToSupabase(device);
+      }));
       await loadSupabaseDataIntoState();
       addAudit("Pridaný podpisový balík online", `${packet.title || "Dokument"} - ${clientName(clientId)}`);
       closeCurrentModal(form);
@@ -4406,6 +4430,9 @@ async function saveDocumentPacket(event) {
   }
 
   state.documentPackets.push(packet);
+  stockDevicesToReserve.forEach((device) => {
+    device.status = "Rezervované";
+  });
   saveState();
   closeCurrentModal(form);
   activeView = "documents";
@@ -4484,9 +4511,10 @@ async function saveHandover(event) {
     documentNames.forEach((name) => {
       if (!device.documents.includes(name)) device.documents.push(name);
     });
+    device.clientId = data.client.id;
     device.warrantyText = warranty;
     device.installed = device.installed || data.date;
-    device.status = device.status === "Importované" ? "OK" : device.status;
+    device.status = ["Importované", "Skladom", "Rezervované"].includes(device.status) ? "OK" : device.status;
   });
 
   if (dataMode === "supabase") {
