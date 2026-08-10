@@ -90,39 +90,25 @@ dd {
 }
 
 .brand-mark {
-  width: 44px;
-  height: 44px;
+  width: 52px;
+  height: 52px;
   position: relative;
   display: block;
-  border-radius: 8px;
-  color: #fff;
-  background: var(--brand-red);
+  flex: 0 0 auto;
+  border-radius: 12px;
+  color: transparent;
+  background: #fff url("/assets/icon-192.png") center / cover no-repeat;
   font-size: 0;
   font-weight: 900;
-  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.18);
+  box-shadow: 0 8px 18px rgba(17, 17, 17, 0.08);
 }
 
 .brand-mark::before {
-  content: "";
-  position: absolute;
-  left: 11px;
-  top: 10px;
-  width: 22px;
-  height: 26px;
-  border: 4px solid #fff;
-  border-bottom-width: 3px;
-  border-radius: 48% 52% 42% 44%;
+  display: none;
 }
 
 .brand-mark::after {
-  content: "";
-  position: absolute;
-  left: 16px;
-  top: 17px;
-  width: 13px;
-  height: 6px;
-  border-top: 3px solid #fff;
-  border-radius: 50%;
+  display: none;
 }
 
 .brand-lockup strong,
