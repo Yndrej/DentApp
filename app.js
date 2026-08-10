@@ -298,6 +298,21 @@ function formatDate(value) {
   return new Intl.DateTimeFormat("sk-SK").format(date);
 }
 
+function formatOptionalDate(value, fallback = "neuvedené") {
+  const date = new Date(value);
+  if (!value || Number.isNaN(date.getTime())) return fallback;
+  return new Intl.DateTimeFormat("sk-SK").format(date);
+}
+
+function isPlaceholderValue(value) {
+  const normalized = String(value || "").trim().toLowerCase();
+  return !normalized || normalized === "doplniť" || normalized === "doplnit" || normalized.startsWith("doplniť ") || normalized.startsWith("doplnit ");
+}
+
+function cleanImportedValue(value) {
+  return isPlaceholderValue(value) ? "" : String(value || "").trim();
+}
+
 function getClientDevices(clientId) {
   return state.devices.filter((device) => device.clientId === clientId);
 }
@@ -348,11 +363,12 @@ function clientName(id) {
 
 function deviceName(id) {
   const device = byId("devices", id);
-  return device ? `${device.brand} ${device.model}` : "Neznáme zariadenie";
+  if (!device) return "Neznáme zariadenie";
+  return [cleanImportedValue(device.brand), cleanImportedValue(device.model)].filter(Boolean).join(" ") || cleanImportedValue(device.type) || "Neznáme zariadenie";
 }
 
 function deviceLabel(device) {
-  return `${device.brand || "Značka"} ${device.model || "Model"} - SN ${device.serial || "Doplniť"}`;
+  return `${[cleanImportedValue(device.brand), cleanImportedValue(device.model)].filter(Boolean).join(" ") || "Zariadenie"} - SN ${cleanImportedValue(device.serial) || "neuvedené"}`;
 }
 
 function isDeviceInvoiced(device) {
@@ -873,7 +889,7 @@ function devicesTable(devices) {
               <td data-label="Ambulancia">${clientName(device.clientId)}</td>
               <td data-label="Sériové číslo">${device.serial}</td>
               <td data-label="Inštalácia">${formatDate(device.installed)}</td>
-              <td data-label="Záruka">${formatDate(device.warrantyUntil)}</td>
+              <td data-label="Záruka">${formatOptionalDate(device.warrantyUntil)}</td>
               <td data-label="Fakturácia">
                 <span class="status-pill ${isDeviceInvoiced(device) ? "status-ok" : "status-planned"}">${isDeviceInvoiced(device) ? "Fakturované" : "Bez FA"}</span>
                 ${isAdmin() && device.invoiceFile ? `<br><small>${invoiceLink(device)}</small>` : ""}
@@ -1104,7 +1120,7 @@ function clientPortalHtml(clientId, showAccessCode = false) {
                 <div><dt>Sériové číslo</dt><dd>${device.serial || "Doplniť"}</dd></div>
                 <div><dt>Typ</dt><dd>${device.type || "Doplniť"}</dd></div>
                 <div><dt>Inštalácia</dt><dd>${formatDate(device.installed)}</dd></div>
-                <div><dt>Záruka do</dt><dd>${formatDate(device.warrantyUntil)}</dd></div>
+                <div><dt>Záruka do</dt><dd>${formatOptionalDate(device.warrantyUntil)}</dd></div>
                 <div><dt>Umiestnenie</dt><dd>${device.location || "Doplniť"}</dd></div>
                 <div><dt>Fakturácia</dt><dd>
                   <span class="status-pill ${isDeviceInvoiced(device) ? "status-ok" : "status-planned"}">${isDeviceInvoiced(device) ? "Fakturované" : "Zatiaľ bez FA"}</span>
@@ -2469,7 +2485,7 @@ function openClientProfile(id) {
         ${devices.length ? devices.map((device) => `
           <article class="timeline-item">
             <strong><button class="link-button" type="button" data-device-profile="${device.id}">${deviceName(device.id)}</button></strong>
-            <small>SN ${device.serial} - záruka do ${formatDate(device.warrantyUntil)}</small>
+            <small>SN ${cleanImportedValue(device.serial) || "neuvedené"} - ${device.warrantyUntil ? `záruka do ${formatOptionalDate(device.warrantyUntil)}` : "záruka neuvedená"}</small>
             <span class="status-pill ${statusClass(device.status)}">${device.status}</span>
             <span class="status-pill ${isDeviceInvoiced(device) ? "status-ok" : "status-planned"}">${isDeviceInvoiced(device) ? "Fakturované" : "Bez FA"}</span>
             <div class="button-row">
@@ -2532,7 +2548,7 @@ function openDeviceProfile(id) {
         <h3>Záruka a dokumenty</h3>
         <dl class="definition-list">
           <div><dt>Inštalácia</dt><dd>${formatDate(device.installed)}</dd></div>
-          <div><dt>Záruka do</dt><dd>${formatDate(device.warrantyUntil)}</dd></div>
+          <div><dt>Záruka do</dt><dd>${formatOptionalDate(device.warrantyUntil)}</dd></div>
         </dl>
         <ul>
           ${device.documents.map((documentName) => `<li>${documentName}</li>`).join("")}
@@ -3865,6 +3881,9 @@ async function saveDevice(event) {
     .map((item) => item.trim())
     .filter(Boolean);
   delete values.documentsText;
+  ["type", "brand", "model", "serial", "location"].forEach((key) => {
+    values[key] = cleanImportedValue(values[key]);
+  });
   const editId = event.target.dataset.editId;
   const existingDevice = editId ? byId("devices", editId) : {};
   if (isAdmin()) {
