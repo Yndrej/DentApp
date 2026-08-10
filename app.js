@@ -2604,7 +2604,7 @@ function openDeviceForm(id = "", presetClientId = "") {
       <label class="full"><span>Dokumenty / poznámka</span><textarea name="documentsText">${escapeHtml((device.documents || []).join("\n"))}</textarea></label>
       <label class="full"><span>Fotografia zariadenia</span><input name="photoFile" type="file" accept="image/*"></label>
       ${isAdmin() ? `
-        <fieldset class="full checklist">
+        <fieldset class="full checklist invoice-fieldset">
           <legend>Faktúra k zariadeniu</legend>
           <label class="checkline">
             <input type="checkbox" name="invoiceIssued" ${isDeviceInvoiced(device) ? "checked" : ""}>
