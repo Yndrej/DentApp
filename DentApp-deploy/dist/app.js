@@ -147,6 +147,9 @@ function ensureStateShape() {
   state.notes = state.notes || [];
   state.auditLog = state.auditLog || [];
   state.service = state.service || [];
+  state.users.forEach((user) => {
+    user.phone = normalizePhoneNumber(user.phone || "");
+  });
   const legacyTechnicianMap = {
     u1: "u-tech-jan-varga",
     u2: "u-tech-oliver-trencsik",
@@ -1544,7 +1547,7 @@ function profileToSession(profile, authUser) {
     name: profile.display_name,
     role: profile.role,
     email: authUser?.email || profile.email || "",
-    phone: profile.phone || "",
+    phone: normalizePhoneNumber(profile.phone || ""),
     active: profile.active,
     protected: profile.protected,
     clientId: profile.client_id || "",
@@ -1559,7 +1562,7 @@ function profileToUser(profile) {
     name: profile.display_name || "Bez mena",
     role: profile.role || "Technik",
     email: profile.email || "",
-    phone: profile.phone || "",
+    phone: normalizePhoneNumber(profile.phone || ""),
     active: profile.active !== false,
     protected: profile.protected || false,
     clientId: profile.client_id || "",
@@ -1573,7 +1576,7 @@ function userProfilePayloadForSupabase(user) {
     display_name: user.name || "",
     email: user.email || "",
     role: user.role || "Technik",
-    phone: user.phone || "",
+    phone: normalizePhoneNumber(user.phone || ""),
     active: user.active !== false,
     protected: user.protected || user.role === "SuperAdministrátor",
     client_id: user.clientId || null,
@@ -3589,7 +3592,7 @@ function openUserForm(id = "") {
     ? ["Technik", "Administrátor", "SuperAdministrátor"]
     : ["Technik"];
   const activeChecked = user.active !== false ? "checked" : "";
-  const emailField = dataMode === "supabase" && id
+  const emailField = dataMode === "supabase" && id && !isSuperAdmin()
     ? `<label><span>E-mail</span><input name="email" type="email" value="${escapeHtml(user.email || "")}" disabled></label><input type="hidden" name="email" value="${escapeHtml(user.email || "")}">`
     : input("email", "E-mail", "meno@dentall.sk", "email", user.email || "", dataMode === "supabase");
   openModal(id ? `Upraviť používateľa: ${user.name}` : "Pridať používateľa", `
@@ -3598,7 +3601,7 @@ function openUserForm(id = "") {
       <label><span>Rola</span><select name="role" ${editingProtectedSelf ? "disabled" : ""}>${roleOptions.map((role) => `<option ${role === user.role ? "selected" : ""}>${role}</option>`).join("")}</select></label>
       ${editingProtectedSelf ? `<input type="hidden" name="role" value="${escapeHtml(user.role)}">` : ""}
       ${emailField}
-      ${input("phone", "Telefón", "+421 ...", "text", user.phone || "", false)}
+      ${phoneInput("phone", "Telefón", "0903123456 alebo +421903123456", user.phone || "")}
       ${id ? "" : input("tempPassword", "Dočasné heslo", DEFAULT_PASSWORD, "text", DEFAULT_PASSWORD, true)}
       ${id ? "" : `<p class="form-note full">${dataMode === "supabase" ? "V Supabase režime sa vytvorí prihlasovací účet aj profil používateľa." : "Nový lokálny používateľ dostane toto dočasné heslo."}</p>`}
       <label class="checkline full">
@@ -3613,6 +3616,18 @@ function openUserForm(id = "") {
 
 function input(name, labelText, placeholder = "", type = "text", value = "", required = true) {
   return `<label><span>${labelText}</span><input name="${name}" type="${type}" placeholder="${escapeHtml(placeholder)}" value="${escapeHtml(value || "")}" ${required ? "required" : ""}></label>`;
+}
+
+function phoneInput(name, labelText, placeholder = "", value = "", required = false) {
+  return `<label><span>${labelText}</span><input name="${name}" type="text" inputmode="tel" autocomplete="off" spellcheck="false" placeholder="${escapeHtml(placeholder)}" value="${escapeHtml(value || "")}" ${required ? "required" : ""}></label>`;
+}
+
+function normalizePhoneNumber(value = "") {
+  const trimmed = String(value || "").trim();
+  if (!trimmed) return "";
+  const hasPlus = trimmed.startsWith("+");
+  const digits = trimmed.replace(/[^\d]/g, "");
+  return hasPlus ? `+${digits}` : digits;
 }
 
 function hasCustomBillingAddress(client = {}) {
@@ -4290,12 +4305,14 @@ async function saveUser(event) {
   delete values.tempPassword;
   values.active = qs("[name='active']", form)?.checked !== false;
   const normalizedEmail = (values.email || "").trim().toLowerCase();
-  if (!editId && dataMode === "supabase") {
+  values.email = normalizedEmail;
+  values.phone = normalizePhoneNumber(values.phone || "");
+  if (dataMode === "supabase") {
     if (!normalizedEmail) {
       alert("Nový online používateľ musí mať vlastný e-mail.");
       return;
     }
-    const duplicateUser = state.users.find((user) => (user.email || "").trim().toLowerCase() === normalizedEmail);
+    const duplicateUser = state.users.find((user) => user.id !== editId && (user.email || "").trim().toLowerCase() === normalizedEmail);
     if (duplicateUser) {
       alert(`Tento e-mail už používa ${duplicateUser.name}. Každý Supabase používateľ musí mať vlastný unikátny e-mail.`);
       return;
