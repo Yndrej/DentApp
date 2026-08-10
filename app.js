@@ -113,6 +113,22 @@ function hasSupabaseSettings() {
   return Boolean(config.url && config.anonKey);
 }
 
+function friendlyAuthError(error, context = "login") {
+  const message = String(error?.message || error || "").toLowerCase();
+  if (message.includes("invalid login credentials")) {
+    return context === "password"
+      ? "Aktuálne heslo nie je správne. Skontrolujte ho a skúste to znova."
+      : "Nesprávny e-mail alebo heslo. Skontrolujte prihlasovacie údaje a skúste to znova.";
+  }
+  if (message.includes("email not confirmed")) {
+    return "E-mail používateľa ešte nie je potvrdený v Supabase Auth.";
+  }
+  if (message.includes("jwt") || message.includes("expired") || message.includes("session")) {
+    return "Prihlásenie medzičasom expirovalo. Odhláste sa a prihláste sa znova.";
+  }
+  return error?.message || "Neznáma chyba.";
+}
+
 function escapeHtml(value = "") {
   return String(value)
     .replaceAll("&", "&amp;")
@@ -535,7 +551,7 @@ function initLogin() {
       supabaseStatus = { state: "Prihlásené", detail: `Supabase Auth prihlásil používateľa ${user.name}.` };
     } catch (error) {
       supabaseAuth = null;
-      alert(`Supabase prihlásenie zlyhalo: ${error.message}`);
+      alert(friendlyAuthError(error, "login"));
       return;
     }
 
@@ -712,7 +728,7 @@ async function savePasswordChange(event) {
     closeCurrentModal(form);
     alert("Heslo bolo zmenené.");
   } catch (error) {
-    alert(`Zmena hesla zlyhala: ${error.message}`);
+    alert(`Zmena hesla zlyhala: ${friendlyAuthError(error, "password")}`);
   } finally {
     submitButton.disabled = false;
     submitButton.textContent = "Uložiť nové heslo";
