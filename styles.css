@@ -1263,6 +1263,15 @@ tbody tr:hover {
   text-transform: none;
 }
 
+.protocol-number-line {
+  margin: 4px 0 12px;
+  color: #000;
+  font-family: Arial, sans-serif;
+  font-size: 14px;
+  font-weight: 800;
+  text-align: right;
+}
+
 .generated-document header strong,
 .generated-document header span {
   color: var(--ink);

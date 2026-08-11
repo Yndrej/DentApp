@@ -2,6 +2,7 @@ const STORAGE_KEY = "dentapp-crm-state-v4";
 const AUTH_STORAGE_KEY = "dentapp-supabase-auth-v1";
 const LOGIN_PREVIEW_STORAGE_KEY = "dentapp-login-preview-v1";
 const DEFAULT_PASSWORD = "DentAll2026!";
+const DOCUMENT_NOTIFICATION_RECIPIENTS = ["stevo@dentall.sk", "obchod@dentall.sk", "dentall@dentall.sk"];
 
 const manufacturers = [
   "A-dec", "Acteon Group", "American Eagle", "Anthogyr", "Bausch", "Dental Hi Tec",
@@ -184,6 +185,7 @@ function ensureStateShape() {
   });
   state.documentPackets.forEach((packet) => {
     if (packet.documentType === "service") packet.billingState = packet.billingState || "Na fakturáciu";
+    if (canOpenSignedDocument(packet)) ensureProtocolNumber(packet);
   });
   state.inventory = state.inventory || structuredClone(seedData.inventory);
   state.inventory.forEach((item) => {
@@ -264,6 +266,41 @@ function byId(collection, id) {
 
 function nextId(prefix, collection) {
   return `${prefix}${Date.now().toString(36)}`;
+}
+
+function protocolPrefixForRecord(record = {}) {
+  if (record.documentType === "service" || record.kind === "Servis") return "SP";
+  if (record.kind === "Demontáž") return "DP";
+  return "OP";
+}
+
+function protocolNumber(record = {}) {
+  return record.protocolNumber || record.serviceValues?.protocolNumber || "";
+}
+
+function nextProtocolNumber(kind, dateValue = "") {
+  const year = String(dateValue || new Date().toISOString().slice(0, 10)).slice(0, 4);
+  const prefix = kind === "service" ? "SP" : kind === "demolition" ? "DP" : "OP";
+  const highest = state.documentPackets.reduce((max, record) => {
+    const value = protocolNumber(record);
+    const match = value.match(new RegExp(`^${prefix}-${year}-(\\d{4})$`));
+    return match ? Math.max(max, Number(match[1])) : max;
+  }, 0);
+  return `${prefix}-${year}-${String(highest + 1).padStart(4, "0")}`;
+}
+
+function ensureProtocolNumber(record, kind = "") {
+  if (!record) return "";
+  const existing = protocolNumber(record);
+  if (existing) {
+    record.protocolNumber = existing;
+    record.serviceValues = { ...(record.serviceValues || {}), protocolNumber: existing };
+    return existing;
+  }
+  const generated = nextProtocolNumber(kind || (record.documentType === "service" ? "service" : record.kind === "Demontáž" ? "demolition" : "handover"), record.date || record.due || record.createdAt);
+  record.protocolNumber = generated;
+  record.serviceValues = { ...(record.serviceValues || {}), protocolNumber: generated };
+  return generated;
 }
 
 function isUuid(value = "") {
@@ -1308,11 +1345,12 @@ function documentPacketsTable(packets) {
   return `
     <div class="table-shell">
       <table>
-        <thead><tr><th>Balík</th><th>Ambulancia</th><th>Zariadenie</th><th>Dokumenty</th><th>Termín</th><th>Stav</th><th>Akcia</th></tr></thead>
+        <thead><tr><th>Balík</th><th>Číslo</th><th>Ambulancia</th><th>Zariadenie</th><th>Dokumenty</th><th>Termín</th><th>Stav</th><th>Akcia</th></tr></thead>
         <tbody>
           ${packets.map((packet) => `
             <tr>
               <td data-label="Balík">${packet.title}<br><small>${packet.kind}</small></td>
+              <td data-label="Číslo">${protocolNumber(packet) || "Pripravuje sa"}</td>
               <td data-label="Ambulancia">${clientName(packet.clientId)}</td>
               <td data-label="Zariadenie">${packet.deviceIds?.length ? packet.deviceIds.map((id) => deviceName(id)).join(", ") : (packet.deviceId ? deviceName(packet.deviceId) : "Bez zariadenia")}</td>
               <td data-label="Dokumenty">${packet.templateIds.map((id) => byId("documentTemplates", id)?.name).filter(Boolean).join(", ")}</td>
@@ -1498,7 +1536,7 @@ function serviceBillingCsvRows(records) {
       values.parts || "",
       values.workDescription || "",
       values.inspection || "",
-      record.id,
+      protocolNumber(record) || record.id,
     ];
   });
   return [headers, ...rows];
@@ -2110,7 +2148,7 @@ function mapDocumentForSupabase(packet, clientIdByLegacy, deviceIdByLegacy, serv
     template_ids: packet.templateIds || [],
     device_ids: deviceIds,
     documents: packet.documents || [],
-    service_values: packet.serviceValues || {},
+    service_values: { ...(packet.serviceValues || {}), ...(protocolNumber(packet) ? { protocolNumber: protocolNumber(packet) } : {}) },
     warranties: packet.warranties || [],
     signatures: packet.signatures || {},
     rendered_html: packet.renderedHtml || "",
@@ -2242,6 +2280,7 @@ function serviceFromSupabase(row, clientLegacyByOnline, deviceLegacyByOnline) {
 
 function documentFromSupabase(row, clientLegacyByOnline, deviceLegacyByOnline, serviceLegacyByOnline) {
   const deviceIds = (row.device_ids || []).map((id) => deviceLegacyByOnline.get(id) || id);
+  const serviceValues = row.service_values || {};
   return {
     id: row.legacy_id || row.id,
     onlineId: row.id,
@@ -2259,7 +2298,8 @@ function documentFromSupabase(row, clientLegacyByOnline, deviceLegacyByOnline, s
     technicianId: row.technician_id || "",
     templateIds: row.template_ids || [],
     documents: row.documents || [],
-    serviceValues: row.service_values || {},
+    protocolNumber: serviceValues.protocolNumber || "",
+    serviceValues,
     warranties: row.warranties || [],
     signatures: row.signatures || {},
     renderedHtml: row.rendered_html || "",
@@ -2430,6 +2470,46 @@ function addAudit(action, detail = "") {
     detail,
   });
   state.auditLog = state.auditLog.slice(0, 300);
+}
+
+function documentNotificationPayload(record) {
+  const client = byId("clients", record.clientId);
+  const devices = (record.deviceIds || (record.deviceId ? [record.deviceId] : []))
+    .map((id) => byId("devices", id))
+    .filter(Boolean);
+  return {
+    recipients: DOCUMENT_NOTIFICATION_RECIPIENTS,
+    protocolNumber: protocolNumber(record),
+    title: record.title || "Protokol",
+    kind: record.kind || (record.documentType === "service" ? "Servis" : "Dokument"),
+    date: record.date || record.due || "",
+    clientName: client?.name || clientName(record.clientId),
+    clientAddress: client ? clientAddress(client) : "",
+    devices: devices.map((device) => ({
+      label: deviceLabel(device),
+      serial: device.serial || "",
+    })),
+    technician: userName(record.technicianId || record.createdBy || session?.id),
+    url: window.location.origin,
+  };
+}
+
+async function sendDocumentNotification(record) {
+  try {
+    const response = await fetch("/api/document-notification", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(documentNotificationPayload(record)),
+    });
+    if (!response.ok) {
+      const text = await response.text();
+      throw new Error(text || `HTTP ${response.status}`);
+    }
+    addAudit("Odoslaná e-mailová notifikácia", `${protocolNumber(record)} - ${DOCUMENT_NOTIFICATION_RECIPIENTS.join(", ")}`);
+  } catch (error) {
+    addAudit("E-mailová notifikácia neodišla", `${protocolNumber(record) || record.title}: ${error.message}`);
+    console.warn("Document notification failed", error);
+  }
 }
 
 function renderAdmin() {
@@ -3320,6 +3400,7 @@ function handoverValues(form) {
     trainer: values.trainer || session?.name || "",
     additionalTechnicians,
     note: values.note || "",
+    protocolNumber: values.protocolNumber || "",
     signatures: {
       client: values["signature-client"] || "",
       technician: values["signature-technician"] || "",
@@ -3351,6 +3432,7 @@ function handoverDocumentsHtml(data) {
     <article class="generated-document dentall-document">
       ${dentallDocumentHeader()}
       <h1>ZÁRUČNÝ LIST, ODOVZDÁVACÍ<br>A PREBERACÍ PROTOKOL</h1>
+      <p class="protocol-number-line">Číslo protokolu: <strong>${data.protocolNumber || "bude pridelené pri uložení"}</strong></p>
       <table class="document-table protocol-table">
         <thead><tr><th>Odovzdávané zariadenia</th><th>Výrobné číslo</th><th>Záruka</th><th>ks</th></tr></thead>
         <tbody>${deviceRows}${emptyDeviceRows}</tbody>
@@ -3557,6 +3639,7 @@ function serviceProtocolValues(form) {
     afterHoursRateVat: values.afterHoursRateVat || "96",
     travelFee: values.travelFee || "0",
     totalPrice: values.totalPrice || "0",
+    protocolNumber: values.protocolNumber || "",
     signatures: {
       client: values["signature-client"] || "",
       technician: values["signature-technician"] || "",
@@ -3579,6 +3662,7 @@ function serviceProtocolDocumentHtml(data) {
     <article class="generated-document dentall-document service-document">
       ${dentallDocumentHeader()}
       <h1>Protokol o prevedených servisných prácach / výjazd /<br>konzultácie / manipulácia</h1>
+      <p class="protocol-number-line">Číslo protokolu: <strong>${data.protocolNumber || "bude pridelené pri uložení"}</strong></p>
       <table class="document-table service-protocol-table">
         <tbody>
           <tr><th>Meno a Priezvisko lekára</th><td>${data.doctorName || "Doplniť"}</td><th>email:</th><td>${data.doctorEmail || ""}</td><th>t.č.:</th><td>${data.doctorPhone || ""}</td></tr>
@@ -4297,11 +4381,14 @@ async function saveServiceProtocol(event) {
   }
   const packetId = nextId("p", "documentPackets");
   const documentNames = ["Servisný protokol"];
+  const generatedProtocolNumber = nextProtocolNumber("service", data.date);
+  data.protocolNumber = generatedProtocolNumber;
   const renderedHtml = serviceProtocolDocumentHtml(data);
   const record = {
     id: packetId,
+    protocolNumber: generatedProtocolNumber,
     documentType: "service",
-    title: `Servisný protokol ${formatDate(data.date)}`,
+    title: `Servisný protokol ${generatedProtocolNumber}`,
     kind: "Servis",
     state: "Odovzdané",
     billingState: "Na fakturáciu",
@@ -4334,6 +4421,7 @@ async function saveServiceProtocol(event) {
       afterHoursRateVat: data.afterHoursRateVat,
       travelFee: data.travelFee,
       totalPrice: data.totalPrice,
+      protocolNumber: generatedProtocolNumber,
     },
   };
 
@@ -4353,6 +4441,7 @@ async function saveServiceProtocol(event) {
       await saveDocumentPacketToSupabase(record);
       await saveServiceTaskToSupabase(data.service);
       if (device) await saveDeviceToSupabase(device);
+      await sendDocumentNotification(record);
       await loadSupabaseDataIntoState();
       addAudit("Podpísaný servisný protokol online", `${data.client.name} - ${data.device.serial || deviceName(data.device.id)} - ${data.totalPrice} EUR`);
       qsa(".modal-backdrop").forEach((modal) => modal.remove());
@@ -4367,6 +4456,7 @@ async function saveServiceProtocol(event) {
 
   addAudit("Podpísaný servisný protokol", `${data.client.name} - ${data.device.serial || deviceName(data.device.id)} - ${data.totalPrice} EUR`);
   saveState();
+  await sendDocumentNotification(record);
   qsa(".modal-backdrop").forEach((modal) => modal.remove());
   activeView = "service";
   qsa("[data-view]").forEach((item) => item.classList.toggle("is-active", item.dataset.view === "service"));
@@ -4458,6 +4548,8 @@ async function saveHandover(event) {
   const existingPacket = existingPacketId ? findDocumentRecord(existingPacketId) : null;
   const packetId = existingPacketId || nextId("p", "documentPackets");
   const documentNames = ["Odovzdávací a záručný protokol", "Záznam o školení"];
+  const generatedProtocolNumber = protocolNumber(existingPacket || {}) || nextProtocolNumber(existingPacket?.kind === "Demontáž" ? "demolition" : "handover", data.date);
+  data.protocolNumber = generatedProtocolNumber;
   const warranties = data.devices.map((device) => ({
     deviceId: device.id,
     warranty: device.handoverWarranty || defaultWarrantyForDevice(device),
@@ -4465,7 +4557,8 @@ async function saveHandover(event) {
   const renderedHtml = handoverDocumentsHtml(data);
   const record = {
     id: packetId,
-    title: existingPacket?.title || `Odovzdanie ${formatDate(data.date)}`,
+    protocolNumber: generatedProtocolNumber,
+    title: existingPacket?.title || `Odovzdanie ${generatedProtocolNumber}`,
     state: "Odovzdané",
     date: data.date,
     documents: documentNames,
@@ -4479,6 +4572,7 @@ async function saveHandover(event) {
     signatures: data.signatures,
     warranties,
     renderedHtml,
+    serviceValues: { ...(existingPacket?.serviceValues || {}), protocolNumber: generatedProtocolNumber },
   };
 
   const signedPacket = {
@@ -4524,6 +4618,7 @@ async function saveHandover(event) {
         const device = byId("devices", selectedDevice.id);
         return device ? saveDeviceToSupabase(device) : Promise.resolve(null);
       }));
+      await sendDocumentNotification(signedPacket);
       await loadSupabaseDataIntoState();
       addAudit("Podpísané odovzdávacie dokumenty online", `${data.client.name} - zariadenia: ${data.devices.length}`);
       qsa(".modal-backdrop").forEach((modal) => modal.remove());
@@ -4537,6 +4632,7 @@ async function saveHandover(event) {
   }
 
   saveState();
+  await sendDocumentNotification(signedPacket);
   qsa(".modal-backdrop").forEach((modal) => modal.remove());
   activeView = "documents";
   qsa("[data-view]").forEach((item) => item.classList.toggle("is-active", item.dataset.view === "documents"));
