@@ -1415,33 +1415,65 @@ function documentPacketsTable(packets) {
   `;
 }
 
+function serviceActionButtons(item) {
+  return `
+    <button class="ghost-action" type="button" data-edit-service="${item.id}">Upraviť</button>
+    <button class="ghost-action" type="button" data-open-service-protocol="${item.id}">Protokol</button>
+    ${(item.documentRecords || []).slice(-1).map((record) => `<button class="secondary-action" type="button" data-open-signed-document="${record.id}">Otvoriť</button>`).join("")}
+  `;
+}
+
 function serviceTable(items) {
   return `
-    <div class="table-shell">
+    <div class="table-shell service-table-shell">
       <table>
-        <thead><tr><th>Úloha</th><th>Ambulancia</th><th>Zariadenie</th><th>Technik</th><th>Termín</th><th>Priorita</th><th>Stav</th><th>Fakturácia</th><th>Akcia</th></tr></thead>
+        <thead><tr><th>Úloha</th><th>Termín</th><th>Priorita</th><th>Stav</th><th>Fakturácia</th><th>Akcia</th></tr></thead>
         <tbody>
           ${items.map((item) => `
             <tr>
-              <td data-label="Úloha">${item.title}</td>
-              <td data-label="Ambulancia">${clientName(item.clientId)}</td>
-              <td data-label="Zariadenie">${deviceName(item.deviceId)}</td>
-              <td data-label="Technik">${userName(item.technicianId)}</td>
+              <td data-label="Úloha">
+                <div class="service-task-summary">
+                  <strong>${item.title}</strong>
+                  <span>${clientName(item.clientId)} · ${deviceName(item.deviceId)}</span>
+                  <span>${userName(item.technicianId)}</span>
+                </div>
+              </td>
               <td data-label="Termín">${formatDate(item.due)}</td>
               <td data-label="Priorita"><span class="status-pill ${statusClass(item.priority)}">${item.priority}</span></td>
               <td data-label="Stav"><span class="status-pill ${statusClass(item.state)}">${item.state}</span></td>
               <td data-label="Fakturácia">${serviceBillingPill(item)}</td>
               <td data-label="Akcia">
                 <div class="row-actions">
-                  <button class="ghost-action" type="button" data-edit-service="${item.id}">Upraviť</button>
-                  <button class="ghost-action" type="button" data-open-service-protocol="${item.id}">Servisný protokol</button>
-                  ${(item.documentRecords || []).slice(-1).map((record) => `<button class="secondary-action" type="button" data-open-signed-document="${record.id}">Otvoriť</button>`).join("")}
+                  ${serviceActionButtons(item)}
                 </div>
               </td>
             </tr>
           `).join("")}
         </tbody>
       </table>
+    </div>
+    <div class="mobile-card-list service-card-list">
+      ${items.map((item) => `
+        <article class="record-card service-task-card">
+          <div class="service-card-head">
+            <div>
+              <h3>${item.title}</h3>
+              <p>${clientName(item.clientId)}</p>
+            </div>
+            <span class="status-pill ${statusClass(item.state)}">${item.state}</span>
+          </div>
+          <dl class="compact-details">
+            <div><dt>Zariadenie</dt><dd>${deviceName(item.deviceId)}</dd></div>
+            <div><dt>Technik</dt><dd>${userName(item.technicianId)}</dd></div>
+            <div><dt>Termín</dt><dd>${formatDate(item.due)}</dd></div>
+            <div><dt>Priorita</dt><dd><span class="status-pill ${statusClass(item.priority)}">${item.priority}</span></dd></div>
+            <div><dt>Fakturácia</dt><dd>${serviceBillingPill(item)}</dd></div>
+          </dl>
+          <div class="row-actions">
+            ${serviceActionButtons(item)}
+          </div>
+        </article>
+      `).join("")}
     </div>
   `;
 }

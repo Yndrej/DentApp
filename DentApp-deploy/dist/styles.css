@@ -738,6 +738,91 @@ textarea:focus {
   gap: 6px;
 }
 
+.service-table-shell table {
+  min-width: 640px;
+  table-layout: fixed;
+}
+
+.service-table-shell th:first-child {
+  width: 34%;
+}
+
+.service-table-shell th:nth-child(2),
+.service-table-shell th:nth-child(3),
+.service-table-shell th:nth-child(4),
+.service-table-shell th:nth-child(5) {
+  width: 12%;
+}
+
+.service-table-shell th:last-child {
+  width: 18%;
+}
+
+.service-task-summary {
+  display: grid;
+  gap: 3px;
+}
+
+.service-task-summary strong {
+  font-size: 14px;
+  line-height: 1.25;
+}
+
+.service-task-summary span {
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.3;
+}
+
+.mobile-card-list {
+  display: none;
+}
+
+.service-task-card {
+  gap: 12px;
+}
+
+.service-card-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: flex-start;
+}
+
+.service-card-head h3 {
+  margin-bottom: 4px;
+}
+
+.service-card-head p {
+  color: var(--muted);
+}
+
+.compact-details {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+}
+
+.compact-details div {
+  display: grid;
+  grid-template-columns: 92px minmax(0, 1fr);
+  gap: 10px;
+}
+
+.compact-details dt {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.compact-details dd {
+  margin: 0;
+  color: var(--text);
+  font-size: 14px;
+  overflow-wrap: anywhere;
+}
+
 table {
   width: 100%;
   min-width: 760px;
@@ -1774,6 +1859,26 @@ tbody tr:hover {
 }
 
 @media (max-width: 960px) {
+  .service-table-shell {
+    display: none;
+  }
+
+  .mobile-card-list {
+    display: grid;
+    gap: 12px;
+  }
+
+  .service-task-card .row-actions {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .service-task-card .row-actions button {
+    width: 100%;
+    min-height: 38px;
+    padding: 8px 10px;
+  }
+
   .table-shell {
     overflow-x: visible;
   }
@@ -1860,6 +1965,17 @@ tbody tr:hover {
   .table-shell .danger-action {
     min-height: 38px;
     padding: 8px 10px;
+  }
+}
+
+@media (max-width: 520px) {
+  .service-task-card .row-actions {
+    grid-template-columns: 1fr;
+  }
+
+  .compact-details div {
+    grid-template-columns: 1fr;
+    gap: 3px;
   }
 }
 
