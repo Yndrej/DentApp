@@ -1417,9 +1417,14 @@ function documentPacketsTable(packets) {
 
 function serviceActionButtons(item) {
   return `
-    <button class="ghost-action" type="button" data-edit-service="${item.id}">Upraviť</button>
-    <button class="ghost-action" type="button" data-open-service-protocol="${item.id}">Protokol</button>
-    ${(item.documentRecords || []).slice(-1).map((record) => `<button class="secondary-action" type="button" data-open-signed-document="${record.id}">Otvoriť</button>`).join("")}
+    <details class="action-menu">
+      <summary>Akcie</summary>
+      <div class="action-menu-list">
+        <button class="ghost-action" type="button" data-edit-service="${item.id}">Upraviť úlohu</button>
+        <button class="ghost-action" type="button" data-open-service-protocol="${item.id}">Servisný protokol</button>
+        ${(item.documentRecords || []).slice(-1).map((record) => `<button class="secondary-action" type="button" data-open-signed-document="${record.id}">Otvoriť protokol</button>`).join("")}
+      </div>
+    </details>
   `;
 }
 

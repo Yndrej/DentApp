@@ -744,18 +744,18 @@ textarea:focus {
 }
 
 .service-table-shell th:first-child {
-  width: 34%;
+  width: 38%;
 }
 
 .service-table-shell th:nth-child(2),
 .service-table-shell th:nth-child(3),
 .service-table-shell th:nth-child(4),
 .service-table-shell th:nth-child(5) {
-  width: 12%;
+  width: 13%;
 }
 
 .service-table-shell th:last-child {
-  width: 18%;
+  width: 10%;
 }
 
 .service-task-summary {
@@ -821,6 +821,51 @@ textarea:focus {
   color: var(--text);
   font-size: 14px;
   overflow-wrap: anywhere;
+}
+
+.action-menu {
+  position: relative;
+}
+
+.action-menu summary {
+  min-height: 34px;
+  padding: 7px 12px;
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  background: #fff3f3;
+  color: var(--brand-red);
+  font-size: 13px;
+  font-weight: 900;
+  line-height: 1.15;
+  list-style: none;
+  cursor: pointer;
+}
+
+.action-menu summary::-webkit-details-marker {
+  display: none;
+}
+
+.action-menu summary::after {
+  content: "⌄";
+  margin-left: 8px;
+  color: var(--muted);
+}
+
+.action-menu[open] summary::after {
+  content: "⌃";
+}
+
+.action-menu-list {
+  display: grid;
+  gap: 6px;
+  min-width: 170px;
+  margin-top: 6px;
+}
+
+.action-menu-list button {
+  justify-content: flex-start;
+  width: 100%;
+  text-align: left;
 }
 
 table {
@@ -1869,11 +1914,11 @@ tbody tr:hover {
   }
 
   .service-task-card .row-actions {
-    display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+    display: block;
   }
 
-  .service-task-card .row-actions button {
+  .service-task-card .action-menu summary,
+  .service-task-card .action-menu-list button {
     width: 100%;
     min-height: 38px;
     padding: 8px 10px;
@@ -1969,10 +2014,6 @@ tbody tr:hover {
 }
 
 @media (max-width: 520px) {
-  .service-task-card .row-actions {
-    grid-template-columns: 1fr;
-  }
-
   .compact-details div {
     grid-template-columns: 1fr;
     gap: 3px;
