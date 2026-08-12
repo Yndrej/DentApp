@@ -36,6 +36,7 @@ let inventoryManufacturerFilter = "all";
 let inventoryCategoryFilter = "all";
 let serviceTechnicianFilter = "all";
 let serviceStatusFilter = "open";
+let dashboardServiceFilter = "open";
 let dataMode = "supabase";
 localStorage.removeItem("dentapp-data-mode");
 
@@ -393,6 +394,32 @@ function matchesServiceStatusFilter(service) {
   if (serviceStatusFilter === "all") return true;
   if (serviceStatusFilter === "open") return !["Hotové", "Fakturované"].includes(service.state);
   return service.state === serviceStatusFilter;
+}
+
+function serviceDueDate(service) {
+  const date = new Date(service.due);
+  return service.due && !Number.isNaN(date.getTime()) ? date : null;
+}
+
+function sameDate(a, b) {
+  return a.toISOString().slice(0, 10) === b.toISOString().slice(0, 10);
+}
+
+function matchesDashboardServiceFilter(service) {
+  const today = new Date();
+  const due = serviceDueDate(service);
+  const doneStates = ["Hotové", "Fakturované"];
+  if (dashboardServiceFilter === "all") return true;
+  if (dashboardServiceFilter === "open") return !doneStates.includes(service.state);
+  if (dashboardServiceFilter === "done") return doneStates.includes(service.state);
+  if (dashboardServiceFilter === "overdue") return due && due < new Date(today.toISOString().slice(0, 10)) && !doneStates.includes(service.state);
+  if (dashboardServiceFilter === "today") return due && sameDate(due, today);
+  if (dashboardServiceFilter === "week") {
+    const end = new Date(today);
+    end.setDate(today.getDate() + 7);
+    return due && due >= new Date(today.toISOString().slice(0, 10)) && due <= end;
+  }
+  return service.state === dashboardServiceFilter;
 }
 
 function clientName(id) {
@@ -909,8 +936,10 @@ function renderDashboard() {
   const warrantySoon = state.devices.filter((device) => new Date(device.warrantyUntil) < new Date("2027-01-01")).length;
   const lowStock = state.inventory.filter((item) => item.qty <= item.min).length;
   const serviceItems = visibleServiceItems();
-  const openService = serviceItems.filter((item) => item.state !== "Hotové").length;
-  const visibleService = serviceItems.filter((item) => matchesSearch(clientName(item.clientId), item.title, deviceName(item.deviceId)));
+  const openService = serviceItems.filter((item) => !["Hotové", "Fakturované"].includes(item.state)).length;
+  const visibleService = serviceItems
+    .filter(matchesDashboardServiceFilter)
+    .filter((item) => matchesSearch(clientName(item.clientId), item.title, deviceName(item.deviceId), item.state, item.priority));
 
   return `
     <section class="metrics-grid">
@@ -925,7 +954,22 @@ function renderDashboard() {
           <h3>Servisný plán</h3>
           <button class="secondary-action" type="button" data-open-service-form>Nová úloha</button>
         </div>
-        ${serviceTable(visibleService)}
+        <div class="toolbar compact dashboard-service-toolbar">
+          <label>
+            <span>Filter úloh</span>
+            <select data-dashboard-service-filter>
+              <option value="open" ${dashboardServiceFilter === "open" ? "selected" : ""}>Otvorené</option>
+              <option value="overdue" ${dashboardServiceFilter === "overdue" ? "selected" : ""}>Omeškané</option>
+              <option value="today" ${dashboardServiceFilter === "today" ? "selected" : ""}>Dnes</option>
+              <option value="week" ${dashboardServiceFilter === "week" ? "selected" : ""}>Najbližších 7 dní</option>
+              <option value="done" ${dashboardServiceFilter === "done" ? "selected" : ""}>Hotové / fakturované</option>
+              <option value="all" ${dashboardServiceFilter === "all" ? "selected" : ""}>Všetko</option>
+              ${serviceStates.map((stateName) => `<option value="${stateName}" ${dashboardServiceFilter === stateName ? "selected" : ""}>${stateName}</option>`).join("")}
+            </select>
+          </label>
+          <p class="form-note">${visibleService.length} úloh vo výbere</p>
+        </div>
+        ${visibleService.length ? serviceTable(visibleService) : emptyState("Pre tento filter nie sú žiadne servisné úlohy.")}
       </div>
       <div class="panel">
         <div class="panel-header"><h3>Rýchle riziká</h3></div>
@@ -2616,6 +2660,10 @@ function bindViewActions(scope) {
   });
   qs("[data-service-status-filter]", scope)?.addEventListener("change", (event) => {
     serviceStatusFilter = event.target.value;
+    render();
+  });
+  qs("[data-dashboard-service-filter]", scope)?.addEventListener("change", (event) => {
+    dashboardServiceFilter = event.target.value;
     render();
   });
   qs("[data-open-document-packet-form]", scope)?.addEventListener("click", () => openDocumentPacketForm());
