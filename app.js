@@ -975,17 +975,19 @@ function renderDashboard() {
         <div class="panel-header"><h3>Rýchle riziká</h3></div>
         <div class="card-grid">
           ${state.inventory.filter((item) => item.qty <= item.min).map((item) => `
-            <article class="record-card">
+            <article class="record-card risk-card">
               <span class="status-pill status-low">Sklad</span>
               <h3>${item.name}</h3>
               <p>${item.qty} ks na sklade, minimum ${item.min} ks.</p>
+              ${isAdmin() ? `<button class="ghost-action" type="button" data-edit-inventory="${item.id}">Upraviť sklad</button>` : ""}
             </article>
           `).join("")}
           ${state.devices.filter((device) => device.status !== "OK").map((device) => `
-            <article class="record-card">
+            <article class="record-card risk-card">
               <span class="status-pill ${statusClass(device.status)}">${device.status}</span>
               <h3>${deviceName(device.id)}</h3>
               <p>${clientName(device.clientId)} - ${device.serial}</p>
+              <button class="ghost-action" type="button" data-device-profile="${device.id}">Otvoriť profil</button>
             </article>
           `).join("")}
         </div>

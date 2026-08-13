@@ -984,6 +984,17 @@ tbody tr:hover {
   padding-left: 18px;
 }
 
+.risk-card {
+  align-content: start;
+}
+
+.risk-card .ghost-action,
+.risk-card .secondary-action {
+  width: 100%;
+  min-height: 36px;
+  padding: 7px 10px;
+}
+
 .profile-grid {
   display: grid;
   grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.1fr);
