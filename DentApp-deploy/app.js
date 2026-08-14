@@ -39,6 +39,8 @@ let serviceTechnicianFilter = "all";
 let serviceStatusFilter = "open";
 let dashboardServiceFilter = "open";
 let providerRegistryFilter = "all";
+let providerRegionFilter = "all";
+let providerDistrictFilter = "all";
 let dataMode = "supabase";
 localStorage.removeItem("dentapp-data-mode");
 
@@ -1132,12 +1134,21 @@ function providerRegistryMetrics(providers) {
 function renderProviderRegistry() {
   setTitle("Register ambulancií", "Verejné zdroje");
   const providers = state.providerRegistry || [];
+  const regions = [...new Set(providers.map((provider) => provider.region).filter(Boolean))].sort((a, b) => a.localeCompare(b, "sk-SK"));
+  const districts = [...new Set(providers
+    .filter((provider) => providerRegionFilter === "all" || provider.region === providerRegionFilter)
+    .map((provider) => provider.district)
+    .filter(Boolean))].sort((a, b) => a.localeCompare(b, "sk-SK"));
+  if (providerRegionFilter !== "all" && !regions.includes(providerRegionFilter)) providerRegionFilter = "all";
+  if (providerDistrictFilter !== "all" && !districts.includes(providerDistrictFilter)) providerDistrictFilter = "all";
   const filtered = providers
     .filter((provider) => {
       if (providerRegistryFilter === "all") return true;
       if (providerRegistryFilter === "Importovane") return provider.registryState === "Importovane" || provider.linkedClientId;
       return provider.registryState !== "Importovane" && !provider.linkedClientId;
     })
+    .filter((provider) => providerRegionFilter === "all" || provider.region === providerRegionFilter)
+    .filter((provider) => providerDistrictFilter === "all" || provider.district === providerDistrictFilter)
     .filter((provider) => matchesSearch(providerSearchText(provider)));
   return `
     ${providerRegistryMetrics(providers)}
@@ -1159,6 +1170,22 @@ function renderProviderRegistry() {
           </select>
         </label>
         <p class="form-note">${filtered.length} záznamov vo výbere</p>
+      </div>
+      <div class="toolbar compact provider-toolbar">
+        <label>
+          <span>Kraj</span>
+          <select data-provider-region-filter>
+            <option value="all" ${providerRegionFilter === "all" ? "selected" : ""}>Vsetky kraje</option>
+            ${regions.map((region) => `<option value="${escapeHtml(region)}" ${providerRegionFilter === region ? "selected" : ""}>${region}</option>`).join("")}
+          </select>
+        </label>
+        <label>
+          <span>Okres</span>
+          <select data-provider-district-filter>
+            <option value="all" ${providerDistrictFilter === "all" ? "selected" : ""}>Vsetky okresy</option>
+            ${districts.map((district) => `<option value="${escapeHtml(district)}" ${providerDistrictFilter === district ? "selected" : ""}>${district}</option>`).join("")}
+          </select>
+        </label>
       </div>
       <div class="provider-grid">
         ${filtered.map(providerRegistryCard).join("") || emptyState("V tomto filtri nie sú žiadne ambulancie.")}
@@ -3062,6 +3089,15 @@ function bindViewActions(scope) {
   qs("[data-simulate-provider-import]", scope)?.addEventListener("click", showProviderImportPreview);
   qs("[data-provider-registry-filter]", scope)?.addEventListener("change", (event) => {
     providerRegistryFilter = event.target.value;
+    render();
+  });
+  qs("[data-provider-region-filter]", scope)?.addEventListener("change", (event) => {
+    providerRegionFilter = event.target.value;
+    providerDistrictFilter = "all";
+    render();
+  });
+  qs("[data-provider-district-filter]", scope)?.addEventListener("change", (event) => {
+    providerDistrictFilter = event.target.value;
     render();
   });
   qsa("[data-start-handover-device]", scope).forEach((button) => button.addEventListener("click", () => openHandoverWorkflow(button.dataset.startHandoverDevice)));
