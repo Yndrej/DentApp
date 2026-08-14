@@ -2636,7 +2636,10 @@ async function loadSupabaseDataIntoState() {
     supabaseRequest("inventory?select=*&order=name.asc"),
     supabaseRequest("service_tasks?select=*&order=due.desc"),
     supabaseRequest("document_packets?select=*&order=created_at.desc"),
-    supabaseRequest("provider_registry?select=*&order=name.asc").catch(() => []),
+    supabaseRequest("provider_registry?select=*&order=name.asc", { headers: { Range: "0-3000" } }).catch((error) => {
+      console.warn("Register ambulancii sa nepodarilo nacitat zo Supabase:", error);
+      return [];
+    }),
   ]);
 
   const onlineUsers = profileRows.map(profileToUser);
