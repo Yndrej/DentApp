@@ -391,6 +391,16 @@ function cleanImportedValue(value) {
   return isPlaceholderValue(value) ? "" : String(value || "").trim();
 }
 
+function normalizeSerial(value = "") {
+  return cleanImportedValue(value).replace(/[^a-z0-9]/gi, "").toLowerCase();
+}
+
+function findDeviceBySerial(serial, exceptId = "") {
+  const normalized = normalizeSerial(serial);
+  if (!normalized) return null;
+  return state.devices.find((device) => device.id !== exceptId && normalizeSerial(device.serial) === normalized) || null;
+}
+
 function getClientDevices(clientId) {
   return state.devices.filter((device) => device.clientId === clientId);
 }
@@ -4621,7 +4631,9 @@ async function saveDevice(event) {
   if (!values.clientId && !["Skladom", "Rezervované", "Vyradené"].includes(values.status)) values.status = "Skladom";
   if (values.clientId && values.status === "Skladom") values.status = "OK";
   const editId = event.target.dataset.editId;
-  const existingDevice = editId ? byId("devices", editId) : {};
+  const duplicateDevice = editId ? null : findDeviceBySerial(values.serial);
+  const targetEditId = editId || duplicateDevice?.id || "";
+  const existingDevice = targetEditId ? byId("devices", targetEditId) : {};
   if (isAdmin()) {
     values.invoiceIssued = Boolean(invoiceIssuedInput?.checked || values.invoiceNumber || values.invoiceDate || invoiceFile);
     if (values.invoiceIssued) {
@@ -4638,15 +4650,16 @@ async function saveDevice(event) {
     delete values.invoiceNumber;
     delete values.invoiceDate;
   }
-  const payload = editId
-    ? { ...byId("devices", editId), ...values, documents, ...(photo ? { photo } : {}) }
+  const payload = targetEditId
+    ? { ...byId("devices", targetEditId), ...values, documents, ...(photo ? { photo } : {}) }
     : { id: nextId("d", "devices"), status: "OK", documents: documents.length ? documents : ["Odovzdávací protokol"], photo, ...values };
+  const wasMoved = Boolean(duplicateDevice && duplicateDevice.clientId !== payload.clientId);
 
   if (dataMode === "supabase") {
     try {
       await saveDeviceToSupabase(payload);
       await loadSupabaseDataIntoState();
-      addAudit(editId ? "Upravené zariadenie online" : "Pridané zariadenie online", `${deviceLabel(payload)} - ${clientName(payload.clientId)}`);
+      addAudit(targetEditId ? (wasMoved ? "Presunuté zariadenie online" : "Upravené zariadenie online") : "Pridané zariadenie online", `${deviceLabel(payload)} - ${clientName(payload.clientId)}`);
       closeCurrentModal(form);
       render();
     } catch (error) {
@@ -4655,8 +4668,8 @@ async function saveDevice(event) {
     return;
   }
 
-  if (editId) {
-    const index = state.devices.findIndex((device) => device.id === editId);
+  if (targetEditId) {
+    const index = state.devices.findIndex((device) => device.id === targetEditId);
     state.devices[index] = payload;
   } else {
     state.devices.push(payload);
