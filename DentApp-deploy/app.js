@@ -1097,7 +1097,7 @@ function providerClientPayload(provider) {
   const providerIdentifier = provider.ico ? `IČO: ${provider.ico}` : `IdZZ: ${provider.idzz || "nezadané"}`;
   return {
     id: `reg-${provider.id}`,
-    name: provider.name || provider.providerName || "Ambulancia z registra",
+    name: providerDisplayName(provider),
     status: "Aktívna",
     segment: "Ambulancia",
     contact: "",
@@ -1114,10 +1114,14 @@ function providerClientPayload(provider) {
     billingZip: provider.addressZip || "",
     billingCompanyId: provider.ico || "",
     billingTaxId: "",
-    note: `Zdroj: ${provider.source || ""}. IdZZ: ${provider.idzz || "nezadané"}. IČO: ${provider.ico || "nezadané"}. Odbornosť: ${provider.specialty || ""}. Poisťovne: ${provider.insurance || ""}.`,
+    note: `Zdroj: ${provider.source || ""}. Prevádzka: ${provider.name || ""}. IdZZ: ${provider.idzz || "nezadané"}. IČO: ${provider.ico || "nezadané"}. Odbornosť: ${provider.specialty || ""}. Poisťovne: ${provider.insurance || ""}.`,
     photo: "",
     portalEnabled: true,
   };
+}
+
+function providerDisplayName(provider) {
+  return provider.providerName || provider.name || "Ambulancia z registra";
 }
 
 function providerIdentifierLabel(provider) {
@@ -1214,14 +1218,16 @@ function renderProviderRegistry() {
 function providerRegistryCard(provider) {
   const imported = provider.registryState === "Importovane" || provider.linkedClientId;
   const stateName = imported ? "Importované" : "Nové";
+  const displayName = providerDisplayName(provider);
+  const branchName = provider.name && provider.name !== displayName ? provider.name : "";
   return `
     <article class="record-card provider-card">
       <div class="provider-card-head">
         <span class="status-pill ${statusClass(imported ? "Importovane" : "Novy")}">${stateName}</span>
         <small>${provider.source || "verejný register"}</small>
       </div>
-      <h3>${provider.name}</h3>
-      <p><strong>Prevádzkovateľ:</strong> ${provider.providerName || "nezadaný"}</p>
+      <h3>${displayName}</h3>
+      ${branchName ? `<p><strong>Prevádzka:</strong> ${branchName}</p>` : ""}
       <dl class="compact-details">
         <div><dt>Adresa</dt><dd>${provider.addressStreet}, ${provider.addressZip} ${provider.city}</dd></div>
         <div><dt>Okres</dt><dd>${provider.district || ""}</dd></div>
@@ -3052,12 +3058,14 @@ function openProviderDetail(id) {
   const provider = providerById(id);
   if (!provider) return;
   const imported = provider.registryState === "Importovane" || provider.linkedClientId;
-  openModal(`Register: ${provider.name}`, `
+  const displayName = providerDisplayName(provider);
+  openModal(`Register: ${displayName}`, `
     <div class="profile-card">
       <span class="status-pill ${statusClass(imported ? "Importovane" : "Novy")}">${imported ? "Importované" : "Nové"}</span>
-      <h3>${provider.name}</h3>
+      <h3>${displayName}</h3>
       <dl class="definition-list">
-        <div><dt>Poskytovateľ</dt><dd>${provider.providerName || "-"}</dd></div>
+        <div><dt>Prevádzka</dt><dd>${provider.name || "-"}</dd></div>
+        <div><dt>Prevádzkovateľ</dt><dd>${provider.providerName || "-"}</dd></div>
         <div><dt>Odbornosť</dt><dd>${provider.specialty || "-"}</dd></div>
         <div><dt>Adresa</dt><dd>${provider.addressStreet || ""}, ${provider.addressZip || ""} ${provider.city || ""}</dd></div>
         <div><dt>Okres / kraj</dt><dd>${provider.district || "-"} / ${provider.region || "-"}</dd></div>
