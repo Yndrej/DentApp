@@ -84,7 +84,7 @@ const seedData = {
     { id: "pr1", sourceId: "KSK-ZUB-001", idzz: "61-01234567-A0001", name: "Stomatologicka ambulancia Smile", providerName: "Smile Dental s.r.o.", ico: "50123456", specialty: "Zubna ambulancia", addressStreet: "Hlavna 12", city: "Kosice", addressZip: "040 01", district: "Kosice I", region: "Kosicky kraj", email: "ambulancia@smiledental.sk", phone: "0551234567", insurance: "Vszp, Dovera, Union", source: "e-VUC / ukazka", registryState: "Novy" },
     { id: "pr2", sourceId: "PSK-ZUB-018", idzz: "71-76543210-A0002", name: "DENT Plus Presov", providerName: "DENT Plus, s.r.o.", ico: "36765432", specialty: "Zubna ambulancia", addressStreet: "Sabinovska 8", city: "Presov", addressZip: "080 01", district: "Presov", region: "Presovsky kraj", email: "recepcia@dentplus.sk", phone: "051222333", insurance: "Vszp, Dovera", source: "e-VUC / ukazka", registryState: "Novy" },
     { id: "pr3", sourceId: "BSK-ZUB-104", idzz: "11-24681357-A0003", name: "OrthoDent Bratislava", providerName: "OrthoDent BA a.s.", ico: "47246813", specialty: "Ortodoncia / zubna ambulancia", addressStreet: "Ruzova dolina 19", city: "Bratislava", addressZip: "821 09", district: "Bratislava II", region: "Bratislavsky kraj", email: "info@orthodentba.sk", phone: "021234987", insurance: "Vszp, Union", source: "open data / ukazka", registryState: "Novy" },
-    { id: "pr4", sourceId: "TTSK-ZUB-052", idzz: "21-11223344-A0004", name: "DentalCare Trnava", providerName: "DentalCare TT s.r.o.", ico: "44112233", specialty: "Zubna ambulancia", addressStreet: "Kollarova 4", city: "Trnava", addressZip: "917 01", district: "Trnava", region: "Trnavsky kraj", email: "trnava@dentalcare.sk", phone: "0335550101", insurance: "Dovera, Union", source: "open data / ukazka", registryState: "Mozna zhoda" }
+    { id: "pr4", sourceId: "TTSK-ZUB-052", idzz: "21-11223344-A0004", name: "DentalCare Trnava", providerName: "DentalCare TT s.r.o.", ico: "44112233", specialty: "Zubna ambulancia", addressStreet: "Kollarova 4", city: "Trnava", addressZip: "917 01", district: "Trnava", region: "Trnavsky kraj", email: "trnava@dentalcare.sk", phone: "0335550101", insurance: "Dovera, Union", source: "open data / ukazka", registryState: "Novy" }
   ],
   documentTemplates: [
     { id: "tpl1", name: "Odovzdávací protokol", type: "Inštalácia", file: "documents/odovzdavaci-protokol.pdf", pages: 2, requiredFor: "Nová inštalácia" },
@@ -204,7 +204,8 @@ function ensureStateShape() {
   state.providerRegistry = state.providerRegistry?.length ? state.providerRegistry : structuredClone(seedData.providerRegistry);
   state.providerRegistry.forEach((provider) => {
     const savedProvider = savedProviderRegistry.find((item) => item.id === provider.id);
-    provider.registryState = savedProvider?.registryState || provider.registryState || "Novy";
+    const registryState = savedProvider?.registryState || provider.registryState || "Novy";
+    provider.registryState = registryState === "Pridane" ? "Importovane" : registryState === "Importovane" ? "Importovane" : "Novy";
     provider.linkedClientId = savedProvider?.linkedClientId || provider.linkedClientId || "";
   });
   state.users.forEach((user) => {
@@ -360,9 +361,9 @@ function findClientByPortalCode(value = "") {
 function statusClass(value) {
   const normalized = String(value || "").toLowerCase();
   if (["ok", "aktívna", "hotové"].includes(normalized)) return "status-ok";
-  if (["pozor", "záruka končí", "prebieha", "stredná", "importované", "na podpis", "na ceste", "čaká na diel", "na fakturáciu", "exportované", "rezervované"].includes(normalized)) return "status-warning";
+  if (["pozor", "záruka končí", "prebieha", "stredná", "importované", "importovane", "na podpis", "na ceste", "čaká na diel", "na fakturáciu", "exportované", "rezervované"].includes(normalized)) return "status-warning";
   if (["riziko", "vysoká"].includes(normalized)) return "status-critical";
-  if (["nová", "naplánovaná", "naplánované", "nízka", "pripravené", "skladom"].includes(normalized)) return "status-planned";
+  if (["nová", "novy", "naplánovaná", "naplánované", "nízka", "pripravené", "skladom"].includes(normalized)) return "status-planned";
   if (["podpísané", "odovzdané", "fakturované"].includes(normalized)) return "status-ok";
   return "status-active";
 }
@@ -1117,16 +1118,13 @@ function providerMatchedClient(provider) {
 }
 
 function providerRegistryMetrics(providers) {
-  const newCount = providers.filter((provider) => provider.registryState === "Novy").length;
-  const addedCount = providers.filter((provider) => provider.registryState === "Pridane").length;
-  const matchCount = providers.filter((provider) => provider.registryState === "Mozna zhoda" || providerMatchedClient(provider)).length;
-  const ignoredCount = providers.filter((provider) => provider.registryState === "Ignorovane").length;
+  const importedCount = providers.filter((provider) => provider.registryState === "Importovane" || provider.linkedClientId).length;
+  const newCount = providers.length - importedCount;
   return `
     <section class="metrics-grid provider-metrics">
       ${metric("V registri", providers.length, "ukážkové záznamy pred importom")}
       ${metric("Nové", newCount, "čakajú na posúdenie")}
-      ${metric("Zhody", matchCount, "možné prepojenie s klientom")}
-      ${metric("Spracované", addedCount + ignoredCount, "pridané alebo ignorované")}
+      ${metric("Importované", importedCount, "už sú medzi klientmi")}
     </section>
   `;
 }
@@ -1135,7 +1133,11 @@ function renderProviderRegistry() {
   setTitle("Register ambulancií", "Verejné zdroje");
   const providers = state.providerRegistry || [];
   const filtered = providers
-    .filter((provider) => providerRegistryFilter === "all" || provider.registryState === providerRegistryFilter)
+    .filter((provider) => {
+      if (providerRegistryFilter === "all") return true;
+      if (providerRegistryFilter === "Importovane") return provider.registryState === "Importovane" || provider.linkedClientId;
+      return provider.registryState !== "Importovane" && !provider.linkedClientId;
+    })
     .filter((provider) => matchesSearch(providerSearchText(provider)));
   return `
     ${providerRegistryMetrics(providers)}
@@ -1143,7 +1145,7 @@ function renderProviderRegistry() {
       <div class="panel-header">
         <div>
           <h3>Externý zoznam poskytovateľov</h3>
-          <p class="form-note">Ukážka oddeleného registra. Do klientov sa ambulancia dostane až po vedomom pridaní alebo prepojení.</p>
+          <p class="form-note">Ukážka oddeleného registra. Do klientov sa ambulancia dostane až po vedomom pridaní.</p>
         </div>
         <button class="ghost-action" type="button" data-simulate-provider-import>Ukázať import</button>
       </div>
@@ -1153,9 +1155,7 @@ function renderProviderRegistry() {
           <select data-provider-registry-filter>
             <option value="all" ${providerRegistryFilter === "all" ? "selected" : ""}>Všetko</option>
             <option value="Novy" ${providerRegistryFilter === "Novy" ? "selected" : ""}>Nové</option>
-            <option value="Mozna zhoda" ${providerRegistryFilter === "Mozna zhoda" ? "selected" : ""}>Možná zhoda</option>
-            <option value="Pridane" ${providerRegistryFilter === "Pridane" ? "selected" : ""}>Pridané</option>
-            <option value="Ignorovane" ${providerRegistryFilter === "Ignorovane" ? "selected" : ""}>Ignorované</option>
+            <option value="Importovane" ${providerRegistryFilter === "Importovane" ? "selected" : ""}>Importované</option>
           </select>
         </label>
         <p class="form-note">${filtered.length} záznamov vo výbere</p>
@@ -1168,12 +1168,12 @@ function renderProviderRegistry() {
 }
 
 function providerRegistryCard(provider) {
-  const matchedClient = providerMatchedClient(provider);
-  const stateName = matchedClient && provider.registryState === "Novy" ? "Mozna zhoda" : provider.registryState;
+  const imported = provider.registryState === "Importovane" || provider.linkedClientId;
+  const stateName = imported ? "Importované" : "Nové";
   return `
     <article class="record-card provider-card">
       <div class="provider-card-head">
-        <span class="status-pill ${statusClass(stateName)}">${stateName}</span>
+        <span class="status-pill ${statusClass(imported ? "Importovane" : "Novy")}">${stateName}</span>
         <small>${provider.source || "verejný register"}</small>
       </div>
       <h3>${provider.name}</h3>
@@ -1184,13 +1184,9 @@ function providerRegistryCard(provider) {
         <div><dt>IČO / IdZZ</dt><dd>${provider.ico || "-"} / ${provider.idzz || "-"}</dd></div>
         <div><dt>Kontakt</dt><dd>${provider.email || "-"}${provider.phone ? `, ${provider.phone}` : ""}</dd></div>
         <div><dt>Poisťovne</dt><dd>${provider.insurance || "-"}</dd></div>
-        ${matchedClient ? `<div><dt>Zhoda</dt><dd>${matchedClient.name}</dd></div>` : ""}
       </dl>
       <div class="row-actions provider-actions">
-        <button class="ghost-action" type="button" data-provider-detail="${provider.id}">Detail</button>
-        ${matchedClient ? `<button class="secondary-action" type="button" data-provider-link-client="${provider.id}" data-client-id="${matchedClient.id}">Prepojiť</button>` : ""}
-        ${provider.registryState !== "Pridane" ? `<button class="primary-action" type="button" data-provider-add-client="${provider.id}">Pridať klienta</button>` : ""}
-        ${provider.registryState !== "Ignorovane" ? `<button class="ghost-action" type="button" data-provider-ignore="${provider.id}">Ignorovať</button>` : ""}
+        ${imported ? "" : `<button class="primary-action" type="button" data-provider-add-client="${provider.id}">Pridať medzi klientov</button>`}
       </div>
     </article>
   `;
@@ -2858,7 +2854,15 @@ async function addProviderAsClient(id) {
   const provider = providerById(id);
   if (!provider) return;
   const existing = providerMatchedClient(provider);
-  if (existing && !confirm(`Vyzerá to, že ambulancia už môže existovať ako klient: ${existing.name}. Pridať ju napriek tomu ako nový klient?`)) {
+  if (existing) {
+    provider.registryState = "Importovane";
+    provider.linkedClientId = existing.id;
+    addAudit("Importovaný poskytovateľ z registra", `${provider.name} -> ${existing.name}`);
+    saveState();
+    activeView = "clients";
+    qsa("[data-view]").forEach((item) => item.classList.toggle("is-active", item.dataset.view === "clients"));
+    render();
+    openClientProfile(existing.id);
     return;
   }
   const client = providerClientPayload(provider);
@@ -2868,7 +2872,7 @@ async function addProviderAsClient(id) {
       if (onlineClient?.id) client.onlineId = onlineClient.id;
     }
     if (!state.clients.some((item) => item.id === client.id)) state.clients.push(client);
-    provider.registryState = "Pridane";
+    provider.registryState = "Importovane";
     provider.linkedClientId = client.id;
     addAudit("Pridaný klient z registra", `${client.name} - ${provider.sourceId || provider.idzz || provider.id}`);
     saveState();
@@ -2885,7 +2889,7 @@ function linkProviderToClient(providerId, clientId) {
   const provider = providerById(providerId);
   const client = byId("clients", clientId);
   if (!provider || !client) return;
-  provider.registryState = "Pridane";
+  provider.registryState = "Importovane";
   provider.linkedClientId = client.id;
   addAudit("Prepojený register s klientom", `${provider.name} -> ${client.name}`);
   saveState();
@@ -2896,10 +2900,10 @@ function linkProviderToClient(providerId, clientId) {
 function openProviderDetail(id) {
   const provider = providerById(id);
   if (!provider) return;
-  const matchedClient = providerMatchedClient(provider);
+  const imported = provider.registryState === "Importovane" || provider.linkedClientId;
   openModal(`Register: ${provider.name}`, `
     <div class="profile-card">
-      <span class="status-pill ${statusClass(provider.registryState)}">${provider.registryState}</span>
+      <span class="status-pill ${statusClass(imported ? "Importovane" : "Novy")}">${imported ? "Importované" : "Nové"}</span>
       <h3>${provider.name}</h3>
       <dl class="definition-list">
         <div><dt>Poskytovateľ</dt><dd>${provider.providerName || "-"}</dd></div>
@@ -2911,12 +2915,9 @@ function openProviderDetail(id) {
         <div><dt>Kontakt</dt><dd>${provider.email || "-"}${provider.phone ? `, ${provider.phone}` : ""}</dd></div>
         <div><dt>Poisťovne</dt><dd>${provider.insurance || "-"}</dd></div>
         <div><dt>Zdroj</dt><dd>${provider.source || "-"} (${provider.sourceId || provider.id})</dd></div>
-        ${matchedClient ? `<div><dt>Možná zhoda</dt><dd>${matchedClient.name}</dd></div>` : ""}
       </dl>
       <div class="button-row">
-        ${matchedClient ? `<button class="secondary-action" type="button" data-provider-link-client="${provider.id}" data-client-id="${matchedClient.id}">Prepojiť s klientom</button>` : ""}
-        <button class="primary-action" type="button" data-provider-add-client="${provider.id}">Pridať medzi klientov</button>
-        <button class="ghost-action" type="button" data-provider-ignore="${provider.id}">Ignorovať</button>
+        ${imported ? `<span class="status-pill ${statusClass("Importovane")}">Importované</span>` : `<button class="primary-action" type="button" data-provider-add-client="${provider.id}">Pridať medzi klientov</button>`}
       </div>
     </div>
   `, (modal) => bindViewActions(modal));
@@ -2952,8 +2953,6 @@ function bindViewActions(scope) {
   }));
   qsa("[data-provider-detail]", scope).forEach((button) => button.addEventListener("click", () => openProviderDetail(button.dataset.providerDetail)));
   qsa("[data-provider-add-client]", scope).forEach((button) => button.addEventListener("click", () => addProviderAsClient(button.dataset.providerAddClient)));
-  qsa("[data-provider-ignore]", scope).forEach((button) => button.addEventListener("click", () => updateProviderRegistryState(button.dataset.providerIgnore, "Ignorovane")));
-  qsa("[data-provider-link-client]", scope).forEach((button) => button.addEventListener("click", () => linkProviderToClient(button.dataset.providerLinkClient, button.dataset.clientId)));
   qs("[data-simulate-provider-import]", scope)?.addEventListener("click", showProviderImportPreview);
   qs("[data-provider-registry-filter]", scope)?.addEventListener("change", (event) => {
     providerRegistryFilter = event.target.value;
