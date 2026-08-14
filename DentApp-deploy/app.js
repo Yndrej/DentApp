@@ -1204,7 +1204,7 @@ function providerRegistryCard(provider) {
         <small>${provider.source || "verejný register"}</small>
       </div>
       <h3>${provider.name}</h3>
-      <p>${provider.providerName || ""}</p>
+      <p><strong>Prevádzkovateľ:</strong> ${provider.providerName || "nezadaný"}</p>
       <dl class="compact-details">
         <div><dt>Adresa</dt><dd>${provider.addressStreet}, ${provider.addressZip} ${provider.city}</dd></div>
         <div><dt>Okres</dt><dd>${provider.district || ""}</dd></div>
