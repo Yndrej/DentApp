@@ -1924,6 +1924,21 @@ async function supabaseRequest(path, options = {}) {
   return payload;
 }
 
+async function supabaseRequestAll(path, pageSize = 1000) {
+  const rows = [];
+  for (let from = 0; from < 10000; from += pageSize) {
+    const page = await supabaseRequest(path, {
+      headers: {
+        Range: `${from}-${from + pageSize - 1}`,
+      },
+    });
+    if (!Array.isArray(page) || !page.length) break;
+    rows.push(...page);
+    if (page.length < pageSize) break;
+  }
+  return rows;
+}
+
 async function supabaseCount(path, token = supabaseAuth?.access_token) {
   const config = supabaseConfig();
   if (!config.url || !config.anonKey) throw new Error("Chýba Supabase URL alebo anon public key.");
@@ -2636,7 +2651,7 @@ async function loadSupabaseDataIntoState() {
     supabaseRequest("inventory?select=*&order=name.asc"),
     supabaseRequest("service_tasks?select=*&order=due.desc"),
     supabaseRequest("document_packets?select=*&order=created_at.desc"),
-    supabaseRequest("provider_registry?select=*&order=name.asc", { headers: { Range: "0-3000" } }).catch((error) => {
+    supabaseRequestAll("provider_registry?select=*&order=name.asc").catch((error) => {
       console.warn("Register ambulancii sa nepodarilo nacitat zo Supabase:", error);
       return [];
     }),
@@ -2924,10 +2939,10 @@ async function testProviderRegistryConnection() {
   supabaseStatus = { state: "Testujem register", detail: "Prebieha nacitanie provider_registry zo Supabase..." };
   render();
   try {
-    const rows = await supabaseRequest("provider_registry?select=id,source_id,name&order=name.asc", { headers: { Range: "0-3000" } });
+    const rows = await supabaseRequestAll("provider_registry?select=id,source_id,name&order=name.asc");
     supabaseStatus = {
       state: "Register dostupny",
-      detail: `REST API vratilo ${rows?.length ?? 0} zaznamov z provider_registry. Ak v sekcii Register stale vidite 4 vzorky, treba vycistit cache aplikacie alebo ju uplne zavriet a otvorit.`,
+      detail: `REST API vratilo ${rows?.length ?? 0} zaznamov z provider_registry. Register sa nacitava po strankach, aby neostal odrezany na limite 1000 riadkov.`,
     };
   } catch (error) {
     supabaseStatus = {
