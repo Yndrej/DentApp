@@ -1084,6 +1084,7 @@ function providerSearchText(provider) {
 }
 
 function providerClientPayload(provider) {
+  const providerIdentifier = provider.ico ? `IČO: ${provider.ico}` : `IdZZ: ${provider.idzz || "nezadané"}`;
   return {
     id: `reg-${provider.id}`,
     name: provider.name || provider.providerName || "Ambulancia z registra",
@@ -1096,17 +1097,23 @@ function providerClientPayload(provider) {
     city: provider.city || "",
     addressZip: provider.addressZip || "",
     addressFloor: "",
-    addressNote: `Import z registra poskytovateľov: ${provider.source || "verejný register"}. IdZZ: ${provider.idzz || ""}`,
+    addressNote: `Import z registra poskytovateľov: ${provider.source || "verejný register"}. ${providerIdentifier}.`,
     billingName: provider.providerName || provider.name || "",
     billingStreet: provider.addressStreet || "",
     billingCity: provider.city || "",
     billingZip: provider.addressZip || "",
     billingCompanyId: provider.ico || "",
     billingTaxId: "",
-    note: `Zdroj: ${provider.source || ""}. Odbornosť: ${provider.specialty || ""}. Poisťovne: ${provider.insurance || ""}.`,
+    note: `Zdroj: ${provider.source || ""}. IdZZ: ${provider.idzz || "nezadané"}. IČO: ${provider.ico || "nezadané"}. Odbornosť: ${provider.specialty || ""}. Poisťovne: ${provider.insurance || ""}.`,
     photo: "",
     portalEnabled: true,
   };
+}
+
+function providerIdentifierLabel(provider) {
+  if (provider.ico) return `IČO: ${provider.ico}`;
+  if (provider.idzz) return `IdZZ: ${provider.idzz}`;
+  return "Nezadané";
 }
 
 function providerMatchedClient(provider) {
@@ -1208,7 +1215,8 @@ function providerRegistryCard(provider) {
       <dl class="compact-details">
         <div><dt>Adresa</dt><dd>${provider.addressStreet}, ${provider.addressZip} ${provider.city}</dd></div>
         <div><dt>Okres</dt><dd>${provider.district || ""}</dd></div>
-        <div><dt>IČO / IdZZ</dt><dd>${provider.ico || "-"} / ${provider.idzz || "-"}</dd></div>
+        <div><dt>Identifikátor</dt><dd>${providerIdentifierLabel(provider)}</dd></div>
+        <div><dt>IdZZ</dt><dd>${provider.idzz || "-"}</dd></div>
         <div><dt>Kontakt</dt><dd>${provider.email || "-"}${provider.phone ? `, ${provider.phone}` : ""}</dd></div>
         <div><dt>Poisťovne</dt><dd>${provider.insurance || "-"}</dd></div>
       </dl>
