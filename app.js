@@ -2441,6 +2441,37 @@ async function deleteDocumentPacketFromSupabase(packet) {
   await supabaseRequest(`document_packets?${column}=eq.${value}`, { method: "DELETE", headers: { Prefer: "return=minimal" } });
 }
 
+function mapProviderForSupabase(provider) {
+  const linkedClient = byId("clients", provider.linkedClientId);
+  return {
+    source_id: provider.sourceId || provider.id,
+    idzz: provider.idzz || "",
+    ico: provider.ico || "",
+    name: provider.name || "",
+    provider_name: provider.providerName || "",
+    specialty: provider.specialty || "",
+    address_street: provider.addressStreet || "",
+    address_city: provider.city || "",
+    address_zip: provider.addressZip || "",
+    district: provider.district || "",
+    region: provider.region || "",
+    email: provider.email || "",
+    phone: normalizePhoneNumber(provider.phone || ""),
+    insurance: provider.insurance || "",
+    source: provider.source || "",
+    registry_state: provider.registryState || "Novy",
+    linked_client_id: linkedClient?.onlineId || (isUuid(linkedClient?.id) ? linkedClient.id : null),
+    imported_at: provider.registryState === "Importovane" ? new Date().toISOString() : null,
+  };
+}
+
+async function saveProviderRegistryToSupabase(provider) {
+  if (dataMode !== "supabase") return null;
+  if (!supabaseAuth?.access_token) throw new Error("Najprv sa prihláste cez Supabase Auth.");
+  const rows = await upsertSupabaseRows("provider_registry", [mapProviderForSupabase(provider)], "source_id");
+  return rows[0] || null;
+}
+
 async function upsertSupabaseRows(table, rows, onConflict = "legacy_id") {
   if (!rows.length) return [];
   return supabaseRequest(`${table}?on_conflict=${onConflict}`, {
@@ -2563,6 +2594,30 @@ function documentFromSupabase(row, clientLegacyByOnline, deviceLegacyByOnline, s
   };
 }
 
+function providerFromSupabase(row, clientLegacyByOnline) {
+  return {
+    id: row.source_id || row.id,
+    onlineId: row.id,
+    sourceId: row.source_id || "",
+    idzz: row.idzz || "",
+    name: row.name || "",
+    providerName: row.provider_name || "",
+    ico: row.ico || "",
+    specialty: row.specialty || "",
+    addressStreet: row.address_street || "",
+    city: row.address_city || "",
+    addressZip: row.address_zip || "",
+    district: row.district || "",
+    region: row.region || "",
+    email: row.email || "",
+    phone: normalizePhoneNumber(row.phone || ""),
+    insurance: row.insurance || "",
+    source: row.source || "register poskytovateľov",
+    registryState: row.registry_state === "Importovane" ? "Importovane" : "Novy",
+    linkedClientId: clientLegacyByOnline.get(row.linked_client_id) || "",
+  };
+}
+
 function attachDocumentRecords() {
   state.devices.forEach((device) => {
     device.documentRecords = state.documentPackets.filter((packet) => (packet.deviceIds || []).includes(device.id) || packet.deviceId === device.id);
@@ -2574,13 +2629,14 @@ function attachDocumentRecords() {
 
 async function loadSupabaseDataIntoState() {
   if (!supabaseAuth?.access_token) throw new Error("Najprv sa prihláste cez Supabase Auth.");
-  const [profileRows, clientsRows, devicesRows, inventoryRows, serviceRows, documentRows] = await Promise.all([
+  const [profileRows, clientsRows, devicesRows, inventoryRows, serviceRows, documentRows, providerRows] = await Promise.all([
     supabaseRequest("users_profile?select=*&order=display_name.asc"),
     supabaseRequest("clients?select=*&order=name.asc"),
     supabaseRequest("devices?select=*&order=serial.asc"),
     supabaseRequest("inventory?select=*&order=name.asc"),
     supabaseRequest("service_tasks?select=*&order=due.desc"),
     supabaseRequest("document_packets?select=*&order=created_at.desc"),
+    supabaseRequest("provider_registry?select=*&order=name.asc").catch(() => []),
   ]);
 
   const onlineUsers = profileRows.map(profileToUser);
@@ -2600,6 +2656,7 @@ async function loadSupabaseDataIntoState() {
     inventory: inventoryRows.map(inventoryFromSupabase),
     service,
     documentPackets,
+    providerRegistry: providerRows.length ? providerRows.map((row) => providerFromSupabase(row, clientLegacyByOnline)) : state.providerRegistry,
   };
   ensureStateShape();
   state.users = onlineUsers.length ? onlineUsers : state.users;
@@ -2612,7 +2669,7 @@ async function loadSupabaseDataIntoState() {
   });
   supabaseStatus = {
     state: "Supabase režim",
-    detail: `Načítané zo Supabase: ${onlineUsers.length} používateľov, ${clients.length} klientov, ${devices.length} zariadení, ${inventoryRows.length} skladových položiek, ${service.length} servisných úloh, ${documentPackets.length} dokumentov. Ambulančné profily, zariadenia, používatelia, servis, sklad aj dokumenty sa už zapisujú online.`,
+    detail: `Načítané zo Supabase: ${onlineUsers.length} používateľov, ${clients.length} klientov, ${devices.length} zariadení, ${inventoryRows.length} skladových položiek, ${service.length} servisných úloh, ${documentPackets.length} dokumentov, ${providerRows.length} záznamov registra. Ambulančné profily, zariadenia, používatelia, servis, sklad, dokumenty aj register sa už zapisujú online.`,
   };
 }
 
@@ -2857,6 +2914,7 @@ async function addProviderAsClient(id) {
   if (existing) {
     provider.registryState = "Importovane";
     provider.linkedClientId = existing.id;
+    if (dataMode === "supabase") await saveProviderRegistryToSupabase(provider).catch(() => null);
     addAudit("Importovaný poskytovateľ z registra", `${provider.name} -> ${existing.name}`);
     saveState();
     activeView = "clients";
@@ -2874,6 +2932,7 @@ async function addProviderAsClient(id) {
     if (!state.clients.some((item) => item.id === client.id)) state.clients.push(client);
     provider.registryState = "Importovane";
     provider.linkedClientId = client.id;
+    if (dataMode === "supabase") await saveProviderRegistryToSupabase(provider).catch(() => null);
     addAudit("Pridaný klient z registra", `${client.name} - ${provider.sourceId || provider.idzz || provider.id}`);
     saveState();
     activeView = "clients";
@@ -2885,12 +2944,13 @@ async function addProviderAsClient(id) {
   }
 }
 
-function linkProviderToClient(providerId, clientId) {
+async function linkProviderToClient(providerId, clientId) {
   const provider = providerById(providerId);
   const client = byId("clients", clientId);
   if (!provider || !client) return;
   provider.registryState = "Importovane";
   provider.linkedClientId = client.id;
+  if (dataMode === "supabase") await saveProviderRegistryToSupabase(provider).catch(() => null);
   addAudit("Prepojený register s klientom", `${provider.name} -> ${client.name}`);
   saveState();
   render();
