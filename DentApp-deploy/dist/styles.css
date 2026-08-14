@@ -973,15 +973,15 @@ tbody tr:hover {
 
 .provider-card {
   align-content: start;
-  grid-template-columns: minmax(240px, 1.1fr) minmax(320px, 2fr) auto;
-  align-items: center;
-  gap: 12px;
-  padding: 10px 12px;
+  grid-template-columns: 1fr auto;
+  align-items: start;
+  gap: 8px 18px;
+  padding: 12px 14px;
 }
 
 .provider-card-head {
   display: flex;
-  justify-content: space-between;
+  justify-content: flex-start;
   gap: 10px;
   align-items: center;
 }
@@ -995,18 +995,33 @@ tbody tr:hover {
 .provider-card h3 {
   color: var(--brand-red);
   margin: 4px 0 0;
-  font-size: 15px;
+  font-size: 17px;
+  line-height: 1.25;
+  grid-column: 1 / 2;
+}
+
+.provider-card > p {
+  grid-column: 1 / 2;
+  margin: 0;
+  color: var(--text);
 }
 
 .provider-card .compact-details {
+  grid-column: 1 / -1;
   padding-top: 2px;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 4px 12px;
+  grid-template-columns: 1.5fr 1fr 1.2fr 1.2fr 1fr;
+  gap: 8px 14px;
+  border-top: 1px solid var(--line);
+  margin-top: 4px;
+  padding-top: 8px;
 }
 
 .provider-actions {
+  grid-column: 2 / 3;
+  grid-row: 1 / 4;
   display: flex;
   justify-content: flex-end;
+  align-self: center;
 }
 
 .provider-actions button {
@@ -1829,6 +1844,10 @@ tbody tr:hover {
   .provider-grid {
     grid-template-columns: 1fr;
   }
+
+  .provider-card .compact-details {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
 }
 
 @media (max-width: 920px) {
@@ -2096,6 +2115,11 @@ tbody tr:hover {
 
   .provider-card {
     grid-template-columns: 1fr;
+  }
+
+  .provider-actions {
+    grid-column: 1 / -1;
+    grid-row: auto;
   }
 
   .provider-card .compact-details {
