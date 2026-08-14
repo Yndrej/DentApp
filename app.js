@@ -2839,6 +2839,7 @@ function renderAdmin() {
       <div class="panel-header">
         <h3>Online testovanie</h3>
         <div class="row-actions">
+          <button class="secondary-action" type="button" data-test-provider-registry>Test registra</button>
           <button class="secondary-action" type="button" data-test-supabase>Test pripojenia</button>
         </div>
       </div>
@@ -2907,6 +2908,33 @@ function updateProviderRegistryState(id, registryState, linkedClientId = "") {
   if (linkedClientId) provider.linkedClientId = linkedClientId;
   addAudit("Register ambulancií", `${provider.name} - ${registryState}`);
   saveState();
+  render();
+}
+
+async function testProviderRegistryConnection() {
+  if (!isAdmin()) return;
+  if (!supabaseAuth?.access_token) {
+    supabaseStatus = {
+      state: "Neprihlasene online",
+      detail: "Nie je aktivny Supabase Auth token. Odhlaste sa a prihlaste sa znova.",
+    };
+    render();
+    return;
+  }
+  supabaseStatus = { state: "Testujem register", detail: "Prebieha nacitanie provider_registry zo Supabase..." };
+  render();
+  try {
+    const rows = await supabaseRequest("provider_registry?select=id,source_id,name&order=name.asc", { headers: { Range: "0-3000" } });
+    supabaseStatus = {
+      state: "Register dostupny",
+      detail: `REST API vratilo ${rows?.length ?? 0} zaznamov z provider_registry. Ak v sekcii Register stale vidite 4 vzorky, treba vycistit cache aplikacie alebo ju uplne zavriet a otvorit.`,
+    };
+  } catch (error) {
+    supabaseStatus = {
+      state: "Register nedostupny",
+      detail: `${error.message}. Tabulka provider_registry existuje, ale aplikacia ju nevie citat cez RLS/Auth.`,
+    };
+  }
   render();
 }
 
@@ -3034,6 +3062,7 @@ function bindViewActions(scope) {
   qs("[data-open-bulk-inventory-form]", scope)?.addEventListener("click", () => openBulkInventoryForm());
   qsa("[data-edit-inventory]", scope).forEach((button) => button.addEventListener("click", () => openInventoryForm(button.dataset.editInventory)));
   qsa("[data-delete-inventory]", scope).forEach((button) => button.addEventListener("click", () => deleteInventoryItem(button.dataset.deleteInventory)));
+  qs("[data-test-provider-registry]", scope)?.addEventListener("click", testProviderRegistryConnection);
   qs("[data-test-supabase]", scope)?.addEventListener("click", testSupabaseConnection);
   qs("[data-open-service-form]", scope)?.addEventListener("click", () => openServiceForm());
   qs("[data-export-service-billing]", scope)?.addEventListener("click", () => exportServiceBillingCsv(scope));
