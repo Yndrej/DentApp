@@ -961,6 +961,50 @@ tbody tr:hover {
   gap: 14px;
 }
 
+.provider-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.provider-toolbar {
+  margin-bottom: 14px;
+}
+
+.provider-card {
+  align-content: start;
+}
+
+.provider-card-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  align-items: center;
+}
+
+.provider-card-head small {
+  color: var(--muted);
+  font-weight: 800;
+  text-align: right;
+}
+
+.provider-card h3 {
+  color: var(--brand-red);
+}
+
+.provider-card .compact-details {
+  padding-top: 2px;
+}
+
+.provider-actions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.provider-actions button {
+  width: 100%;
+}
+
 .record-card {
   display: grid;
   gap: 10px;
@@ -1769,6 +1813,10 @@ tbody tr:hover {
   .profile-grid {
     grid-template-columns: 1fr;
   }
+
+  .provider-grid {
+    grid-template-columns: 1fr;
+  }
 }
 
 @media (max-width: 920px) {
@@ -2028,6 +2076,10 @@ tbody tr:hover {
   .compact-details div {
     grid-template-columns: 1fr;
     gap: 3px;
+  }
+
+  .provider-actions {
+    grid-template-columns: 1fr;
   }
 }
 

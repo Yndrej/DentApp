@@ -1,6 +1,7 @@
 const STORAGE_KEY = "dentapp-crm-state-v4";
 const AUTH_STORAGE_KEY = "dentapp-supabase-auth-v1";
 const LOGIN_PREVIEW_STORAGE_KEY = "dentapp-login-preview-v1";
+const PROVIDER_REGISTRY_STORAGE_KEY = "dentapp-provider-registry-v1";
 const DEFAULT_PASSWORD = "DentAll2026!";
 const DOCUMENT_NOTIFICATION_RECIPIENTS = ["stevo@dentall.sk", "obchod@dentall.sk", "dentall@dentall.sk"];
 
@@ -37,6 +38,7 @@ let inventoryCategoryFilter = "all";
 let serviceTechnicianFilter = "all";
 let serviceStatusFilter = "open";
 let dashboardServiceFilter = "open";
+let providerRegistryFilter = "all";
 let dataMode = "supabase";
 localStorage.removeItem("dentapp-data-mode");
 
@@ -77,6 +79,12 @@ const seedData = {
   notes: [
     { clientId: "c1", date: "2026-07-28", text: "Doplnené dokumenty ku Green X a zaznamenaná konfigurácia siete." },
     { clientId: "c4", date: "2026-08-01", text: "Ambulancia hlási občasné spomalenie pri ukladaní RTG snímok." }
+  ],
+  providerRegistry: [
+    { id: "pr1", sourceId: "KSK-ZUB-001", idzz: "61-01234567-A0001", name: "Stomatologicka ambulancia Smile", providerName: "Smile Dental s.r.o.", ico: "50123456", specialty: "Zubna ambulancia", addressStreet: "Hlavna 12", city: "Kosice", addressZip: "040 01", district: "Kosice I", region: "Kosicky kraj", email: "ambulancia@smiledental.sk", phone: "0551234567", insurance: "Vszp, Dovera, Union", source: "e-VUC / ukazka", registryState: "Novy" },
+    { id: "pr2", sourceId: "PSK-ZUB-018", idzz: "71-76543210-A0002", name: "DENT Plus Presov", providerName: "DENT Plus, s.r.o.", ico: "36765432", specialty: "Zubna ambulancia", addressStreet: "Sabinovska 8", city: "Presov", addressZip: "080 01", district: "Presov", region: "Presovsky kraj", email: "recepcia@dentplus.sk", phone: "051222333", insurance: "Vszp, Dovera", source: "e-VUC / ukazka", registryState: "Novy" },
+    { id: "pr3", sourceId: "BSK-ZUB-104", idzz: "11-24681357-A0003", name: "OrthoDent Bratislava", providerName: "OrthoDent BA a.s.", ico: "47246813", specialty: "Ortodoncia / zubna ambulancia", addressStreet: "Ruzova dolina 19", city: "Bratislava", addressZip: "821 09", district: "Bratislava II", region: "Bratislavsky kraj", email: "info@orthodentba.sk", phone: "021234987", insurance: "Vszp, Union", source: "open data / ukazka", registryState: "Novy" },
+    { id: "pr4", sourceId: "TTSK-ZUB-052", idzz: "21-11223344-A0004", name: "DentalCare Trnava", providerName: "DentalCare TT s.r.o.", ico: "44112233", specialty: "Zubna ambulancia", addressStreet: "Kollarova 4", city: "Trnava", addressZip: "917 01", district: "Trnava", region: "Trnavsky kraj", email: "trnava@dentalcare.sk", phone: "0335550101", insurance: "Dovera, Union", source: "open data / ukazka", registryState: "Mozna zhoda" }
   ],
   documentTemplates: [
     { id: "tpl1", name: "Odovzdávací protokol", type: "Inštalácia", file: "documents/odovzdavaci-protokol.pdf", pages: 2, requiredFor: "Nová inštalácia" },
@@ -152,11 +160,32 @@ function loadState() {
 
 function saveState() {
   if (dataMode === "supabase") {
+    saveProviderRegistryState();
     updateLoginPreview();
     return;
   }
   localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+  saveProviderRegistryState();
   updateLoginPreview();
+}
+
+function savedProviderRegistryState() {
+  try {
+    const saved = localStorage.getItem(PROVIDER_REGISTRY_STORAGE_KEY);
+    return saved ? JSON.parse(saved) : [];
+  } catch {
+    return [];
+  }
+}
+
+function saveProviderRegistryState() {
+  if (!state?.providerRegistry) return;
+  const compact = state.providerRegistry.map((provider) => ({
+    id: provider.id,
+    registryState: provider.registryState || "Novy",
+    linkedClientId: provider.linkedClientId || "",
+  }));
+  localStorage.setItem(PROVIDER_REGISTRY_STORAGE_KEY, JSON.stringify(compact));
 }
 
 function ensureStateShape() {
@@ -171,6 +200,13 @@ function ensureStateShape() {
   state.notes = state.notes || [];
   state.auditLog = state.auditLog || [];
   state.service = state.service || [];
+  const savedProviderRegistry = savedProviderRegistryState();
+  state.providerRegistry = state.providerRegistry?.length ? state.providerRegistry : structuredClone(seedData.providerRegistry);
+  state.providerRegistry.forEach((provider) => {
+    const savedProvider = savedProviderRegistry.find((item) => item.id === provider.id);
+    provider.registryState = savedProvider?.registryState || provider.registryState || "Novy";
+    provider.linkedClientId = savedProvider?.linkedClientId || provider.linkedClientId || "";
+  });
   state.users.forEach((user) => {
     user.phone = normalizePhoneNumber(user.phone || "");
   });
@@ -490,6 +526,10 @@ function userName(id) {
 function matchesSearch(...values) {
   if (!query) return true;
   return values.join(" ").toLowerCase().includes(query.toLowerCase());
+}
+
+function normalizeSearch(value = "") {
+  return String(value).trim().toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
 }
 
 function imagePreview(src, alt) {
@@ -921,6 +961,7 @@ function render() {
   const views = {
     dashboard: renderDashboard,
     clients: renderClients,
+    providers: renderProviderRegistry,
     devices: renderDevices,
     inventory: renderInventory,
     service: renderService,
@@ -1016,6 +1057,142 @@ function renderClients() {
       ${clientAlphabetNav(searchedClients)}
       ${clients.length ? clientsTable(clients) : emptyState("Nenašli sa žiadne ambulancie.")}
     </section>
+  `;
+}
+
+function providerSearchText(provider) {
+  return [
+    provider.name,
+    provider.providerName,
+    provider.ico,
+    provider.idzz,
+    provider.sourceId,
+    provider.specialty,
+    provider.addressStreet,
+    provider.city,
+    provider.district,
+    provider.region,
+    provider.email,
+    provider.phone,
+    provider.insurance,
+    provider.source,
+    provider.registryState,
+  ].join(" ");
+}
+
+function providerClientPayload(provider) {
+  return {
+    id: `reg-${provider.id}`,
+    name: provider.name || provider.providerName || "Ambulancia z registra",
+    status: "Aktívna",
+    segment: "Ambulancia",
+    contact: "",
+    email: provider.email || "",
+    phone: normalizePhoneNumber(provider.phone || ""),
+    addressStreet: provider.addressStreet || "",
+    city: provider.city || "",
+    addressZip: provider.addressZip || "",
+    addressFloor: "",
+    addressNote: `Import z registra poskytovateľov: ${provider.source || "verejný register"}. IdZZ: ${provider.idzz || ""}`,
+    billingName: provider.providerName || provider.name || "",
+    billingStreet: provider.addressStreet || "",
+    billingCity: provider.city || "",
+    billingZip: provider.addressZip || "",
+    billingCompanyId: provider.ico || "",
+    billingTaxId: "",
+    note: `Zdroj: ${provider.source || ""}. Odbornosť: ${provider.specialty || ""}. Poisťovne: ${provider.insurance || ""}.`,
+    photo: "",
+    portalEnabled: true,
+  };
+}
+
+function providerMatchedClient(provider) {
+  const ico = String(provider.ico || "").replace(/\D/g, "");
+  return state.clients.find((client) => {
+    const clientIco = String(client.billingCompanyId || "").replace(/\D/g, "");
+    if (ico && clientIco && ico === clientIco) return true;
+    return normalizeSearch(client.name) === normalizeSearch(provider.name)
+      || normalizeSearch(client.name) === normalizeSearch(provider.providerName);
+  });
+}
+
+function providerRegistryMetrics(providers) {
+  const newCount = providers.filter((provider) => provider.registryState === "Novy").length;
+  const addedCount = providers.filter((provider) => provider.registryState === "Pridane").length;
+  const matchCount = providers.filter((provider) => provider.registryState === "Mozna zhoda" || providerMatchedClient(provider)).length;
+  const ignoredCount = providers.filter((provider) => provider.registryState === "Ignorovane").length;
+  return `
+    <section class="metrics-grid provider-metrics">
+      ${metric("V registri", providers.length, "ukážkové záznamy pred importom")}
+      ${metric("Nové", newCount, "čakajú na posúdenie")}
+      ${metric("Zhody", matchCount, "možné prepojenie s klientom")}
+      ${metric("Spracované", addedCount + ignoredCount, "pridané alebo ignorované")}
+    </section>
+  `;
+}
+
+function renderProviderRegistry() {
+  setTitle("Register ambulancií", "Verejné zdroje");
+  const providers = state.providerRegistry || [];
+  const filtered = providers
+    .filter((provider) => providerRegistryFilter === "all" || provider.registryState === providerRegistryFilter)
+    .filter((provider) => matchesSearch(providerSearchText(provider)));
+  return `
+    ${providerRegistryMetrics(providers)}
+    <section class="panel">
+      <div class="panel-header">
+        <div>
+          <h3>Externý zoznam poskytovateľov</h3>
+          <p class="form-note">Ukážka oddeleného registra. Do klientov sa ambulancia dostane až po vedomom pridaní alebo prepojení.</p>
+        </div>
+        <button class="ghost-action" type="button" data-simulate-provider-import>Ukázať import</button>
+      </div>
+      <div class="toolbar compact provider-toolbar">
+        <label>
+          <span>Stav v registri</span>
+          <select data-provider-registry-filter>
+            <option value="all" ${providerRegistryFilter === "all" ? "selected" : ""}>Všetko</option>
+            <option value="Novy" ${providerRegistryFilter === "Novy" ? "selected" : ""}>Nové</option>
+            <option value="Mozna zhoda" ${providerRegistryFilter === "Mozna zhoda" ? "selected" : ""}>Možná zhoda</option>
+            <option value="Pridane" ${providerRegistryFilter === "Pridane" ? "selected" : ""}>Pridané</option>
+            <option value="Ignorovane" ${providerRegistryFilter === "Ignorovane" ? "selected" : ""}>Ignorované</option>
+          </select>
+        </label>
+        <p class="form-note">${filtered.length} záznamov vo výbere</p>
+      </div>
+      <div class="provider-grid">
+        ${filtered.map(providerRegistryCard).join("") || emptyState("V tomto filtri nie sú žiadne ambulancie.")}
+      </div>
+    </section>
+  `;
+}
+
+function providerRegistryCard(provider) {
+  const matchedClient = providerMatchedClient(provider);
+  const stateName = matchedClient && provider.registryState === "Novy" ? "Mozna zhoda" : provider.registryState;
+  return `
+    <article class="record-card provider-card">
+      <div class="provider-card-head">
+        <span class="status-pill ${statusClass(stateName)}">${stateName}</span>
+        <small>${provider.source || "verejný register"}</small>
+      </div>
+      <h3>${provider.name}</h3>
+      <p>${provider.providerName || ""}</p>
+      <dl class="compact-details">
+        <div><dt>Adresa</dt><dd>${provider.addressStreet}, ${provider.addressZip} ${provider.city}</dd></div>
+        <div><dt>Okres</dt><dd>${provider.district || ""}</dd></div>
+        <div><dt>IČO / IdZZ</dt><dd>${provider.ico || "-"} / ${provider.idzz || "-"}</dd></div>
+        <div><dt>Kontakt</dt><dd>${provider.email || "-"}${provider.phone ? `, ${provider.phone}` : ""}</dd></div>
+        <div><dt>Poisťovne</dt><dd>${provider.insurance || "-"}</dd></div>
+        ${matchedClient ? `<div><dt>Zhoda</dt><dd>${matchedClient.name}</dd></div>` : ""}
+      </dl>
+      <div class="row-actions provider-actions">
+        <button class="ghost-action" type="button" data-provider-detail="${provider.id}">Detail</button>
+        ${matchedClient ? `<button class="secondary-action" type="button" data-provider-link-client="${provider.id}" data-client-id="${matchedClient.id}">Prepojiť</button>` : ""}
+        ${provider.registryState !== "Pridane" ? `<button class="primary-action" type="button" data-provider-add-client="${provider.id}">Pridať klienta</button>` : ""}
+        ${provider.registryState !== "Ignorovane" ? `<button class="ghost-action" type="button" data-provider-ignore="${provider.id}">Ignorovať</button>` : ""}
+      </div>
+    </article>
   `;
 }
 
@@ -2663,6 +2840,103 @@ function emptyState(text) {
   return `<div class="empty-state">${text}</div>`;
 }
 
+function providerById(id) {
+  return (state.providerRegistry || []).find((provider) => provider.id === id);
+}
+
+function updateProviderRegistryState(id, registryState, linkedClientId = "") {
+  const provider = providerById(id);
+  if (!provider) return;
+  provider.registryState = registryState;
+  if (linkedClientId) provider.linkedClientId = linkedClientId;
+  addAudit("Register ambulancií", `${provider.name} - ${registryState}`);
+  saveState();
+  render();
+}
+
+async function addProviderAsClient(id) {
+  const provider = providerById(id);
+  if (!provider) return;
+  const existing = providerMatchedClient(provider);
+  if (existing && !confirm(`Vyzerá to, že ambulancia už môže existovať ako klient: ${existing.name}. Pridať ju napriek tomu ako nový klient?`)) {
+    return;
+  }
+  const client = providerClientPayload(provider);
+  try {
+    if (dataMode === "supabase") {
+      const onlineClient = await saveClientToSupabase(client);
+      if (onlineClient?.id) client.onlineId = onlineClient.id;
+    }
+    if (!state.clients.some((item) => item.id === client.id)) state.clients.push(client);
+    provider.registryState = "Pridane";
+    provider.linkedClientId = client.id;
+    addAudit("Pridaný klient z registra", `${client.name} - ${provider.sourceId || provider.idzz || provider.id}`);
+    saveState();
+    activeView = "clients";
+    qsa("[data-view]").forEach((item) => item.classList.toggle("is-active", item.dataset.view === "clients"));
+    render();
+    openClientProfile(client.id);
+  } catch (error) {
+    alert(`Pridanie klienta z registra zlyhalo: ${error.message}`);
+  }
+}
+
+function linkProviderToClient(providerId, clientId) {
+  const provider = providerById(providerId);
+  const client = byId("clients", clientId);
+  if (!provider || !client) return;
+  provider.registryState = "Pridane";
+  provider.linkedClientId = client.id;
+  addAudit("Prepojený register s klientom", `${provider.name} -> ${client.name}`);
+  saveState();
+  render();
+  openClientProfile(client.id);
+}
+
+function openProviderDetail(id) {
+  const provider = providerById(id);
+  if (!provider) return;
+  const matchedClient = providerMatchedClient(provider);
+  openModal(`Register: ${provider.name}`, `
+    <div class="profile-card">
+      <span class="status-pill ${statusClass(provider.registryState)}">${provider.registryState}</span>
+      <h3>${provider.name}</h3>
+      <dl class="definition-list">
+        <div><dt>Poskytovateľ</dt><dd>${provider.providerName || "-"}</dd></div>
+        <div><dt>Odbornosť</dt><dd>${provider.specialty || "-"}</dd></div>
+        <div><dt>Adresa</dt><dd>${provider.addressStreet || ""}, ${provider.addressZip || ""} ${provider.city || ""}</dd></div>
+        <div><dt>Okres / kraj</dt><dd>${provider.district || "-"} / ${provider.region || "-"}</dd></div>
+        <div><dt>IČO</dt><dd>${provider.ico || "-"}</dd></div>
+        <div><dt>IdZZ</dt><dd>${provider.idzz || "-"}</dd></div>
+        <div><dt>Kontakt</dt><dd>${provider.email || "-"}${provider.phone ? `, ${provider.phone}` : ""}</dd></div>
+        <div><dt>Poisťovne</dt><dd>${provider.insurance || "-"}</dd></div>
+        <div><dt>Zdroj</dt><dd>${provider.source || "-"} (${provider.sourceId || provider.id})</dd></div>
+        ${matchedClient ? `<div><dt>Možná zhoda</dt><dd>${matchedClient.name}</dd></div>` : ""}
+      </dl>
+      <div class="button-row">
+        ${matchedClient ? `<button class="secondary-action" type="button" data-provider-link-client="${provider.id}" data-client-id="${matchedClient.id}">Prepojiť s klientom</button>` : ""}
+        <button class="primary-action" type="button" data-provider-add-client="${provider.id}">Pridať medzi klientov</button>
+        <button class="ghost-action" type="button" data-provider-ignore="${provider.id}">Ignorovať</button>
+      </div>
+    </div>
+  `, (modal) => bindViewActions(modal));
+}
+
+function showProviderImportPreview() {
+  openModal("Ukážka importu registra", `
+    <div class="profile-card">
+      <h3>Ako by fungoval reálny import</h3>
+      <div class="timeline">
+        <article class="timeline-item"><strong>1. Stiahnuť zdroj</strong><small>e-VÚC / open data / krajský endpoint</small></article>
+        <article class="timeline-item"><strong>2. Normalizovať údaje</strong><small>IČO, IdZZ, adresa, mesto, kontakty, poisťovne</small></article>
+        <article class="timeline-item"><strong>3. Nájsť zhody</strong><small>Porovnanie s klientmi DentApp podľa IČO, názvu a adresy</small></article>
+        <article class="timeline-item"><strong>4. Zobraziť v registri</strong><small>Bez automatického miešania medzi reálnych klientov</small></article>
+      </div>
+      <p class="form-note">Toto je zatiaľ iba návrh obrazovky. Reálny import by sme urobili až po vytvorení tabuľky v Supabase.</p>
+    </div>
+  `, null);
+}
+
 function bindViewActions(scope) {
   qsa("[data-client-profile]", scope).forEach((button) => button.addEventListener("click", () => openClientProfile(button.dataset.clientProfile)));
   qsa("[data-open-client-portal]", scope).forEach((button) => button.addEventListener("click", () => openClientPortal(button.dataset.openClientPortal)));
@@ -2676,6 +2950,15 @@ function bindViewActions(scope) {
     clientLetterFilter = button.dataset.clientLetter || "all";
     render();
   }));
+  qsa("[data-provider-detail]", scope).forEach((button) => button.addEventListener("click", () => openProviderDetail(button.dataset.providerDetail)));
+  qsa("[data-provider-add-client]", scope).forEach((button) => button.addEventListener("click", () => addProviderAsClient(button.dataset.providerAddClient)));
+  qsa("[data-provider-ignore]", scope).forEach((button) => button.addEventListener("click", () => updateProviderRegistryState(button.dataset.providerIgnore, "Ignorovane")));
+  qsa("[data-provider-link-client]", scope).forEach((button) => button.addEventListener("click", () => linkProviderToClient(button.dataset.providerLinkClient, button.dataset.clientId)));
+  qs("[data-simulate-provider-import]", scope)?.addEventListener("click", showProviderImportPreview);
+  qs("[data-provider-registry-filter]", scope)?.addEventListener("change", (event) => {
+    providerRegistryFilter = event.target.value;
+    render();
+  });
   qsa("[data-start-handover-device]", scope).forEach((button) => button.addEventListener("click", () => openHandoverWorkflow(button.dataset.startHandoverDevice)));
   qsa("[data-edit-service]", scope).forEach((button) => button.addEventListener("click", () => openServiceForm(button.dataset.editService)));
   qsa("[data-open-service-protocol]", scope).forEach((button) => button.addEventListener("click", () => openServiceProtocolWorkflow(button.dataset.openServiceProtocol)));
