@@ -549,6 +549,15 @@ function normalizeSearch(value = "") {
   return String(value).trim().toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
 }
 
+function extractIcoFromIdzz(idzz = "") {
+  const match = String(idzz).match(/\b\d{2}-(\d{8})-[A-Z]\d{4}\b/i);
+  return match ? match[1] : "";
+}
+
+function providerIco(provider = {}) {
+  return String(provider.ico || extractIcoFromIdzz(provider.idzz) || "").replace(/\D/g, "");
+}
+
 function imagePreview(src, alt) {
   return src
     ? `<img class="entity-photo" src="${src}" alt="${escapeHtml(alt)}">`
@@ -1078,11 +1087,12 @@ function renderClients() {
 }
 
 function providerSearchText(provider) {
+  const ico = providerIco(provider);
   return [
     providerDisplayName(provider),
     provider.name,
     provider.providerName,
-    provider.ico,
+    ico,
     provider.idzz,
     provider.sourceId,
     provider.specialty,
@@ -1106,7 +1116,8 @@ function providerMatchesLookup(provider, value) {
 }
 
 function providerClientPayload(provider) {
-  const providerIdentifier = provider.ico ? `IČO: ${provider.ico}` : `IdZZ: ${provider.idzz || "nezadané"}`;
+  const ico = providerIco(provider);
+  const providerIdentifier = ico ? `IČO: ${ico}` : `IdZZ: ${provider.idzz || "nezadané"}`;
   return {
     id: `reg-${provider.id}`,
     name: providerDisplayName(provider),
@@ -1124,9 +1135,9 @@ function providerClientPayload(provider) {
     billingStreet: provider.addressStreet || "",
     billingCity: provider.city || "",
     billingZip: provider.addressZip || "",
-    billingCompanyId: provider.ico || "",
+    billingCompanyId: ico,
     billingTaxId: "",
-    note: `Zdroj: ${provider.source || ""}. Prevádzka: ${provider.name || ""}. IdZZ: ${provider.idzz || "nezadané"}. IČO: ${provider.ico || "nezadané"}. Odbornosť: ${provider.specialty || ""}. Poisťovne: ${provider.insurance || ""}.`,
+    note: `Zdroj: ${provider.source || ""}. Prevádzka: ${provider.name || ""}. IdZZ: ${provider.idzz || "nezadané"}. IČO: ${ico || "nezadané"}. Odbornosť: ${provider.specialty || ""}. Poisťovne: ${provider.insurance || ""}.`,
     photo: "",
     portalEnabled: true,
   };
@@ -1179,7 +1190,7 @@ function openProviderLookupForClient(form) {
       ${matches.map((provider) => `
         <button class="search-result-button" type="button" data-apply-provider-client="${provider.id}">
           <strong>${providerDisplayName(provider)}</strong>
-          <small>${provider.name || ""}${provider.ico ? ` - IČO ${provider.ico}` : ""}${provider.idzz ? ` - IdZZ ${provider.idzz}` : ""}</small>
+          <small>${provider.name || ""}${providerIco(provider) ? ` - IČO ${providerIco(provider)}` : ""}${provider.idzz ? ` - IdZZ ${provider.idzz}` : ""}</small>
           <small>${provider.addressStreet || ""}, ${provider.addressZip || ""} ${provider.city || ""}</small>
         </button>
       `).join("")}
@@ -1202,13 +1213,14 @@ function providerDisplayName(provider) {
 }
 
 function providerIdentifierLabel(provider) {
-  if (provider.ico) return `IČO: ${provider.ico}`;
+  const ico = providerIco(provider);
+  if (ico) return `IČO: ${ico}`;
   if (provider.idzz) return `IdZZ: ${provider.idzz}`;
   return "Nezadané";
 }
 
 function providerMatchedClient(provider) {
-  const ico = String(provider.ico || "").replace(/\D/g, "");
+  const ico = providerIco(provider);
   return state.clients.find((client) => {
     const clientIco = String(client.billingCompanyId || "").replace(/\D/g, "");
     if (ico && clientIco && ico === clientIco) return true;
@@ -1297,6 +1309,7 @@ function providerRegistryCard(provider) {
   const stateName = imported ? "Importované" : "Nové";
   const displayName = providerDisplayName(provider);
   const branchName = provider.name && provider.name !== displayName ? provider.name : "";
+  const ico = providerIco(provider);
   return `
     <article class="record-card provider-card">
       <div class="provider-card-head">
@@ -1308,7 +1321,7 @@ function providerRegistryCard(provider) {
       <dl class="compact-details">
         <div><dt>Adresa</dt><dd>${provider.addressStreet}, ${provider.addressZip} ${provider.city}</dd></div>
         <div><dt>Okres</dt><dd>${provider.district || ""}</dd></div>
-        <div><dt>Identifikátor</dt><dd>${providerIdentifierLabel(provider)}</dd></div>
+        <div><dt>IČO</dt><dd>${ico || "-"}</dd></div>
         <div><dt>IdZZ</dt><dd>${provider.idzz || "-"}</dd></div>
         <div><dt>Kontakt</dt><dd>${provider.email || "-"}${provider.phone ? `, ${provider.phone}` : ""}</dd></div>
         <div><dt>Poisťovne</dt><dd>${provider.insurance || "-"}</dd></div>
@@ -2586,10 +2599,11 @@ async function deleteDocumentPacketFromSupabase(packet) {
 
 function mapProviderForSupabase(provider) {
   const linkedClient = byId("clients", provider.linkedClientId);
+  const ico = providerIco(provider);
   return {
     source_id: provider.sourceId || provider.id,
     idzz: provider.idzz || "",
-    ico: provider.ico || "",
+    ico,
     name: provider.name || "",
     provider_name: provider.providerName || "",
     specialty: provider.specialty || "",
@@ -2738,6 +2752,7 @@ function documentFromSupabase(row, clientLegacyByOnline, deviceLegacyByOnline, s
 }
 
 function providerFromSupabase(row, clientLegacyByOnline) {
+  const ico = row.ico || extractIcoFromIdzz(row.idzz || row.source_id || "");
   return {
     id: row.source_id || row.id,
     onlineId: row.id,
@@ -2745,7 +2760,7 @@ function providerFromSupabase(row, clientLegacyByOnline) {
     idzz: row.idzz || "",
     name: row.name || "",
     providerName: row.provider_name || "",
-    ico: row.ico || "",
+    ico,
     specialty: row.specialty || "",
     addressStreet: row.address_street || "",
     city: row.address_city || "",
@@ -3136,6 +3151,7 @@ function openProviderDetail(id) {
   if (!provider) return;
   const imported = provider.registryState === "Importovane" || provider.linkedClientId;
   const displayName = providerDisplayName(provider);
+  const ico = providerIco(provider);
   openModal(`Register: ${displayName}`, `
     <div class="profile-card">
       <span class="status-pill ${statusClass(imported ? "Importovane" : "Novy")}">${imported ? "Importované" : "Nové"}</span>
@@ -3146,7 +3162,7 @@ function openProviderDetail(id) {
         <div><dt>Odbornosť</dt><dd>${provider.specialty || "-"}</dd></div>
         <div><dt>Adresa</dt><dd>${provider.addressStreet || ""}, ${provider.addressZip || ""} ${provider.city || ""}</dd></div>
         <div><dt>Okres / kraj</dt><dd>${provider.district || "-"} / ${provider.region || "-"}</dd></div>
-        <div><dt>IČO</dt><dd>${provider.ico || "-"}</dd></div>
+        <div><dt>IČO</dt><dd>${ico || "-"}</dd></div>
         <div><dt>IdZZ</dt><dd>${provider.idzz || "-"}</dd></div>
         <div><dt>Kontakt</dt><dd>${provider.email || "-"}${provider.phone ? `, ${provider.phone}` : ""}</dd></div>
         <div><dt>Poisťovne</dt><dd>${provider.insurance || "-"}</dd></div>

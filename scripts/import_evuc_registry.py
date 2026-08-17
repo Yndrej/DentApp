@@ -170,6 +170,11 @@ def parse_specialty_and_idzz(context: str) -> tuple[str, str]:
     return specialty, idzz
 
 
+def ico_from_idzz(idzz: str) -> str:
+    match = re.search(r"\b\d{2}-(\d{8})-[A-Z]\d{4}\b", idzz or "", re.IGNORECASE)
+    return match.group(1) if match else ""
+
+
 def parse_address(context: str, idzz: str) -> tuple[str, str, str]:
     if idzz and idzz in context:
         address_part = context.split(idzz, 1)[1]
@@ -212,7 +217,7 @@ def provider_records(region: str, district: str, district_url: str, delay: float
         records.append({
             "source_id": source_id,
             "idzz": idzz,
-            "ico": "",
+            "ico": ico_from_idzz(idzz),
             "name": name,
             "provider_name": provider_name,
             "specialty": specialty or "Zubné lekárstvo",
