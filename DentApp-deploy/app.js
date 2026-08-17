@@ -1132,9 +1132,9 @@ function providerClientPayload(provider) {
     addressFloor: "",
     addressNote: `Import z registra poskytovateľov: ${provider.source || "verejný register"}. ${providerIdentifier}.`,
     billingName: provider.providerName || provider.name || "",
-    billingStreet: provider.addressStreet || "",
-    billingCity: provider.city || "",
-    billingZip: provider.addressZip || "",
+    billingStreet: "",
+    billingCity: "",
+    billingZip: "",
     billingCompanyId: ico,
     billingTaxId: "",
     note: `Zdroj: ${provider.source || ""}. Prevádzka: ${provider.name || ""}. IdZZ: ${provider.idzz || "nezadané"}. IČO: ${ico || "nezadané"}. Odbornosť: ${provider.specialty || ""}. Poisťovne: ${provider.insurance || ""}.`,
@@ -1158,19 +1158,17 @@ function applyProviderToClientForm(form, provider) {
   setValue("segment", payload.segment);
   setValue("billingCompanyId", payload.billingCompanyId);
   setValue("billingName", payload.billingName);
-  setValue("billingStreet", payload.billingStreet);
-  setValue("billingCity", payload.billingCity);
-  setValue("billingZip", payload.billingZip);
   setValue("addressNote", payload.addressNote);
   setValue("note", payload.note);
 }
 
 function openProviderLookupForClient(form) {
+  const providerLookup = qs("[name='providerLookup']", form)?.value || "";
   const ico = qs("[name='billingCompanyId']", form)?.value || "";
   const name = qs("[name='name']", form)?.value || "";
-  const term = ico.trim() || name.trim();
+  const term = providerLookup.trim() || ico.trim() || name.trim();
   if (term.length < 2) {
-    alert("Zadajte IČO alebo časť názvu ambulancie/firmy.");
+    alert("Zadajte IdZZ alebo časť názvu ambulancie/firmy z e-VÚC.");
     return;
   }
   const matches = (state.providerRegistry || [])
@@ -3419,9 +3417,12 @@ function openClientForm(id = "") {
       ${input("phone", "Telefón", "+421 ...", "text", client.phone, false)}
       ${input("segment", "Segment", "Ambulancia", "text", client.segment, false)}
       <div class="field-with-action">
+        ${input("providerLookup", "IdZZ / e-VÚC prevádzka", "61-47636467-A0002 alebo názov ambulancie", "text", "", false)}
+        <button class="secondary-action" type="button" data-load-provider-registry>Načítať adresu ambulancie</button>
+      </div>
+      <div class="field-with-action">
         ${input("billingCompanyId", "IČO", "36486761", "text", client.billingCompanyId, false)}
-        <button class="secondary-action" type="button" data-load-provider-registry>Načítať z registra</button>
-        <button class="secondary-action" type="button" data-load-company-by-ico>Načítať podľa IČO</button>
+        <button class="secondary-action" type="button" data-load-company-by-ico>Načítať fakturačné údaje</button>
       </div>
       ${input("billingTaxId", "DIČ / IČ DPH", "SK...", "text", client.billingTaxId, false)}
       <label class="checkline full">
@@ -3475,17 +3476,6 @@ async function fillCompanyByIco(form) {
   }
 
   try {
-    const providerMatches = (state.providerRegistry || [])
-      .filter((provider) => providerIco(provider) === ico)
-      .slice(0, 10);
-    if (providerMatches.length === 1) {
-      applyProviderToClientForm(form, providerMatches[0]);
-      return;
-    }
-    if (providerMatches.length > 1) {
-      openProviderLookupForClient(form);
-      return;
-    }
     const company = await fetchCompanyByIco(ico);
     applyCompanyToClientForm(form, company);
   } catch (error) {
@@ -3509,25 +3499,21 @@ async function fetchCompanyByIco(ico) {
 function applyCompanyToClientForm(form, company) {
   const address = company.address || {};
   const street = [address.street, address.building_no].filter(Boolean).join(" ");
-  const useBilling = qs("[name='customBillingAddress']", form)?.checked;
+  const customBillingInput = qs("[name='customBillingAddress']", form);
+  const billingSection = qs("[data-billing-address-section]", form);
   const setValue = (name, value) => {
     const field = qs(`[name='${name}']`, form);
     if (field && value) field.value = value;
   };
 
+  if (customBillingInput) customBillingInput.checked = true;
+  billingSection?.classList.remove("is-hidden");
   setValue("billingCompanyId", company.ico);
   setValue("billingTaxId", company.ic_dph || company.dic || "");
-  if (useBilling) {
-    setValue("billingName", company.name);
-    setValue("billingStreet", street);
-    setValue("billingCity", address.city || "");
-    setValue("billingZip", address.zip || "");
-  } else {
-    setValue("name", company.name);
-    setValue("addressStreet", street);
-    setValue("city", address.city || "");
-    setValue("addressZip", address.zip || "");
-  }
+  setValue("billingName", company.name);
+  setValue("billingStreet", street);
+  setValue("billingCity", address.city || "");
+  setValue("billingZip", address.zip || "");
 }
 
 function openDeviceForm(id = "", presetClientId = "") {
@@ -4682,6 +4668,7 @@ async function saveClient(event) {
   const values = formValues(form);
   const photo = await fileToDataUrl(qs("[name='photoFile']", form)?.files?.[0]);
   delete values.photoFile;
+  delete values.providerLookup;
   const customBillingAddress = values.customBillingAddress === "on";
   delete values.customBillingAddress;
   if (!customBillingAddress) {
