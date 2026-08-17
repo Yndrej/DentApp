@@ -3475,6 +3475,17 @@ async function fillCompanyByIco(form) {
   }
 
   try {
+    const providerMatches = (state.providerRegistry || [])
+      .filter((provider) => providerIco(provider) === ico)
+      .slice(0, 10);
+    if (providerMatches.length === 1) {
+      applyProviderToClientForm(form, providerMatches[0]);
+      return;
+    }
+    if (providerMatches.length > 1) {
+      openProviderLookupForClient(form);
+      return;
+    }
     const company = await fetchCompanyByIco(ico);
     applyCompanyToClientForm(form, company);
   } catch (error) {
