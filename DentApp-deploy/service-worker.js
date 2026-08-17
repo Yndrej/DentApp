@@ -1,9 +1,9 @@
-const DENTAPP_CACHE = "dentapp-shell-v31";
+const DENTAPP_CACHE = "dentapp-shell-v32";
 const SHELL_FILES = [
   "/",
   "/index.html",
   "/styles.css",
-  "/app.js?v=20260814-provider-company-name",
+  "/app.js?v=20260817-registry-lookup",
   "/data.js",
   "/supabase-config.js",
   "/manifest.json",

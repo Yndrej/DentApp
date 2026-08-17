@@ -538,7 +538,11 @@ function userName(id) {
 
 function matchesSearch(...values) {
   if (!query) return true;
-  return values.join(" ").toLowerCase().includes(query.toLowerCase());
+  const haystack = normalizeSearch(values.join(" "));
+  return normalizeSearch(query)
+    .split(/\s+/)
+    .filter(Boolean)
+    .every((term) => haystack.includes(term));
 }
 
 function normalizeSearch(value = "") {
@@ -1075,6 +1079,7 @@ function renderClients() {
 
 function providerSearchText(provider) {
   return [
+    providerDisplayName(provider),
     provider.name,
     provider.providerName,
     provider.ico,
@@ -1091,6 +1096,13 @@ function providerSearchText(provider) {
     provider.source,
     provider.registryState,
   ].join(" ");
+}
+
+function providerMatchesLookup(provider, value) {
+  const search = normalizeSearch(value);
+  if (!search) return false;
+  const haystack = normalizeSearch(providerSearchText(provider));
+  return search.split(/\s+/).filter(Boolean).every((term) => haystack.includes(term));
 }
 
 function providerClientPayload(provider) {
@@ -1118,6 +1130,71 @@ function providerClientPayload(provider) {
     photo: "",
     portalEnabled: true,
   };
+}
+
+function applyProviderToClientForm(form, provider) {
+  const payload = providerClientPayload(provider);
+  const setValue = (name, value) => {
+    const field = qs(`[name='${name}']`, form);
+    if (field) field.value = value || "";
+  };
+  setValue("name", payload.name);
+  setValue("addressStreet", payload.addressStreet);
+  setValue("city", payload.city);
+  setValue("addressZip", payload.addressZip);
+  setValue("email", payload.email);
+  setValue("phone", payload.phone);
+  setValue("segment", payload.segment);
+  setValue("billingCompanyId", payload.billingCompanyId);
+  setValue("billingName", payload.billingName);
+  setValue("billingStreet", payload.billingStreet);
+  setValue("billingCity", payload.billingCity);
+  setValue("billingZip", payload.billingZip);
+  setValue("addressNote", payload.addressNote);
+  setValue("note", payload.note);
+}
+
+function openProviderLookupForClient(form) {
+  const ico = qs("[name='billingCompanyId']", form)?.value || "";
+  const name = qs("[name='name']", form)?.value || "";
+  const term = ico.trim() || name.trim();
+  if (term.length < 2) {
+    alert("Zadajte IČO alebo časť názvu ambulancie/firmy.");
+    return;
+  }
+  const matches = (state.providerRegistry || [])
+    .filter((provider) => providerMatchesLookup(provider, term))
+    .slice(0, 10);
+  if (!matches.length) {
+    alert("V registri sa nenašla žiadna zhoda.");
+    return;
+  }
+  if (matches.length === 1) {
+    applyProviderToClientForm(form, matches[0]);
+    return;
+  }
+  const parentModal = form.closest(".modal-backdrop");
+  openModal("Vybrať z registra", `
+    <div class="search-result-list provider-lookup-list">
+      ${matches.map((provider) => `
+        <button class="search-result-button" type="button" data-apply-provider-client="${provider.id}">
+          <strong>${providerDisplayName(provider)}</strong>
+          <small>${provider.name || ""}${provider.ico ? ` - IČO ${provider.ico}` : ""}${provider.idzz ? ` - IdZZ ${provider.idzz}` : ""}</small>
+          <small>${provider.addressStreet || ""}, ${provider.addressZip || ""} ${provider.city || ""}</small>
+        </button>
+      `).join("")}
+    </div>
+  `, (modal) => {
+    qsa("[data-apply-provider-client]", modal).forEach((button) => {
+      button.addEventListener("click", () => {
+        const provider = providerById(button.dataset.applyProviderClient);
+        if (provider) applyProviderToClientForm(form, provider);
+        modal.remove();
+        parentModal?.classList.remove("is-muted");
+      });
+    });
+    parentModal?.classList.add("is-muted");
+  });
 }
 
 function providerDisplayName(provider) {
@@ -3327,6 +3404,7 @@ function openClientForm(id = "") {
       ${input("segment", "Segment", "Ambulancia", "text", client.segment, false)}
       <div class="field-with-action">
         ${input("billingCompanyId", "IČO", "36486761", "text", client.billingCompanyId, false)}
+        <button class="secondary-action" type="button" data-load-provider-registry>Načítať z registra</button>
         <button class="secondary-action" type="button" data-load-company-by-ico>Načítať podľa IČO</button>
       </div>
       ${input("billingTaxId", "DIČ / IČ DPH", "SK...", "text", client.billingTaxId, false)}
@@ -3359,6 +3437,7 @@ function bindClientForm(modal) {
     billingSection?.classList.toggle("is-hidden", !customBillingInput?.checked);
   };
   customBillingInput?.addEventListener("change", toggleBillingSection);
+  qs("[data-load-provider-registry]", form)?.addEventListener("click", () => openProviderLookupForClient(form));
   qs("[data-load-company-by-ico]", form)?.addEventListener("click", () => fillCompanyByIco(form));
   form.addEventListener("submit", saveClient);
   toggleBillingSection();
