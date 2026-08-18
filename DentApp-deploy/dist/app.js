@@ -1,4 +1,4 @@
-const STORAGE_KEY = "dentapp-crm-state-v4";
+﻿const STORAGE_KEY = "dentapp-crm-state-v4";
 const AUTH_STORAGE_KEY = "dentapp-supabase-auth-v1";
 const LOGIN_PREVIEW_STORAGE_KEY = "dentapp-login-preview-v1";
 const PROVIDER_REGISTRY_STORAGE_KEY = "dentapp-provider-registry-v1";
@@ -14,7 +14,7 @@ const manufacturers = [
 
 const inventoryCategories = [
   "Zariadenie", "Náhradný diel", "Spotrebný materiál", "Príslušenstvo", "Dezinfekcia",
-  "Nástroje", "RTG", "Súpravy a kreslá", "Servisný materiál", "IT a sieť"
+  "Nástroje", "RTG", "Súpravy a kreslá", "Servisný materiál", "IT a sieť", "Katalóg MKsoft"
 ];
 
 const serviceStates = ["Nová", "Naplánovaná", "Na ceste", "Prebieha", "Čaká na diel", "Hotové", "Fakturované"];
@@ -547,6 +547,16 @@ function isDeviceInvoiced(device) {
   return Boolean(device?.invoiceIssued || device?.invoiceFile || device?.invoiceNumber);
 }
 
+function isLowStockItem(item) {
+  return Number(item?.min) > 0 && Number(item?.qty) <= Number(item?.min);
+}
+
+function inventoryStatusLabel(item) {
+  if (isLowStockItem(item)) return "Doplniť";
+  if (Number(item?.min) === 0 && Number(item?.qty) === 0 && Number(item?.reserved) === 0) return "Katalóg";
+  return "OK";
+}
+
 function invoiceLabel(device) {
   if (!isDeviceInvoiced(device)) return "Nefakturované";
   return device.invoiceNumber ? `Fakturované - ${device.invoiceNumber}` : "Fakturované";
@@ -820,7 +830,7 @@ function updateLoginPreview() {
   const devicesTotal = loginPreviewTotals?.devices ?? state.devices.length;
   const risksTotal = loginPreviewTotals?.risks ?? (
     state.devices.filter((device) => device.status !== "OK" && device.status !== "Importované").length
-    + state.inventory.filter((item) => item.qty <= item.min).length
+    + state.inventory.filter((item) => isLowStockItem(item)).length
   );
   const clientsCount = qs("[data-login-clients]");
   const devicesCount = qs("[data-login-devices]");
@@ -851,7 +861,7 @@ async function refreshLoginPreviewTotals() {
     const fallbackRisks =
       loginPreviewTotals?.risks ??
       state.devices.filter((device) => device.status !== "OK" && device.status !== "Importované").length +
-        state.inventory.filter((item) => item.qty <= item.min).length;
+        state.inventory.filter((item) => isLowStockItem(item)).length;
     const [clients, devices] = await Promise.all([
       supabaseCount("clients?select=id", token),
       supabaseCount("devices?select=id", token),
@@ -1099,7 +1109,7 @@ function render() {
 function renderDashboard() {
   setTitle("Prehľad", "Operatíva");
   const warrantySoon = state.devices.filter((device) => new Date(device.warrantyUntil) < new Date("2027-01-01")).length;
-  const lowStock = state.inventory.filter((item) => item.qty <= item.min).length;
+  const lowStock = state.inventory.filter((item) => isLowStockItem(item)).length;
   const serviceItems = visibleServiceItems();
   const openService = serviceItems.filter((item) => !["Hotové", "Fakturované"].includes(item.state)).length;
   const visibleService = serviceItems
@@ -1139,7 +1149,7 @@ function renderDashboard() {
       <div class="panel">
         <div class="panel-header"><h3>Rýchle riziká</h3></div>
         <div class="card-grid">
-          ${state.inventory.filter((item) => item.qty <= item.min).map((item) => `
+          ${state.inventory.filter((item) => isLowStockItem(item)).map((item) => `
             <article class="record-card risk-card">
               <span class="status-pill status-low">Sklad</span>
               <h3>${item.name}</h3>
@@ -1525,7 +1535,7 @@ function renderInventory() {
     const categoryMatch = inventoryCategoryFilter === "all" || item.itemType === inventoryCategoryFilter || item.category === inventoryCategoryFilter;
     return manufacturerMatch && categoryMatch && matchesSearch(item.name, item.sku, item.category, item.itemType, item.manufacturer, item.compatibility, item.location, item.note);
   });
-  const lowStock = items.filter((item) => item.qty <= item.min).length;
+  const lowStock = items.filter((item) => isLowStockItem(item)).length;
   return `
     <section class="panel">
       <div class="panel-header">
@@ -1574,7 +1584,7 @@ function inventoryTable(items) {
               <td data-label="Sklad">${item.qty} ks</td>
               <td data-label="Rezervované">${item.reserved} ks</td>
               <td data-label="Umiestnenie">${item.location || "Doplniť"}</td>
-              <td data-label="Stav"><span class="status-pill ${item.qty <= item.min ? "status-low" : "status-ok"}">${item.qty <= item.min ? "Doplniť" : "OK"}</span></td>
+              <td data-label="Stav"><span class="status-pill ${isLowStockItem(item) ? "status-low" : "status-ok"}">${inventoryStatusLabel(item)}</span></td>
               ${isAdmin() ? `<td data-label="Akcia"><div class="row-actions"><button class="ghost-action" type="button" data-edit-inventory="${item.id}">Upraviť</button><button class="danger-action" type="button" data-delete-inventory="${item.id}">Vymazať</button></div></td>` : ""}
             </tr>
           `).join("")}
@@ -3023,7 +3033,7 @@ async function loadSupabaseDataIntoState() {
     clients: clients.length,
     devices: devices.length,
     risks: devices.filter((device) => device.status !== "OK" && device.status !== "Importované").length
-      + inventoryRows.map(inventoryFromSupabase).filter((item) => item.qty <= item.min).length,
+      + inventoryRows.map(inventoryFromSupabase).filter((item) => isLowStockItem(item)).length,
   });
   supabaseStatus = {
     state: "Supabase režim",
