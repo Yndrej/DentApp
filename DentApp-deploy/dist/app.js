@@ -1103,7 +1103,9 @@ function providerSearchText(provider) {
     provider.email,
     provider.phone,
     provider.insurance,
+    provider.staff,
     provider.source,
+    provider.sourceUrl,
     provider.registryState,
   ].join(" ");
 }
@@ -1137,7 +1139,7 @@ function providerClientPayload(provider) {
     billingZip: "",
     billingCompanyId: ico,
     billingTaxId: "",
-    note: `Zdroj: ${provider.source || ""}. Prevádzka: ${provider.name || ""}. IdZZ: ${provider.idzz || "nezadané"}. IČO: ${ico || "nezadané"}. Odbornosť: ${provider.specialty || ""}. Poisťovne: ${provider.insurance || ""}.`,
+    note: `Zdroj: ${provider.source || ""}. Prevádzka: ${provider.name || ""}. IdZZ: ${provider.idzz || "nezadané"}. IČO: ${ico || "nezadané"}. Odbornosť: ${provider.specialty || ""}. Personál: ${provider.staff || ""}. Poisťovne: ${provider.insurance || ""}.`,
     photo: "",
     portalEnabled: true,
   };
@@ -1322,6 +1324,7 @@ function providerRegistryCard(provider) {
         <div><dt>IČO</dt><dd>${ico || "-"}</dd></div>
         <div><dt>IdZZ</dt><dd>${provider.idzz || "-"}</dd></div>
         <div><dt>Kontakt</dt><dd>${provider.email || "-"}${provider.phone ? `, ${provider.phone}` : ""}</dd></div>
+        <div><dt>Lekári / sestry</dt><dd>${provider.staff || "-"}</dd></div>
         <div><dt>Poisťovne</dt><dd>${provider.insurance || "-"}</dd></div>
       </dl>
       <div class="row-actions provider-actions">
@@ -2613,6 +2616,8 @@ function mapProviderForSupabase(provider) {
     email: provider.email || "",
     phone: normalizePhoneNumber(provider.phone || ""),
     insurance: provider.insurance || "",
+    staff: provider.staff || "",
+    source_url: provider.sourceUrl || "",
     source: provider.source || "",
     registry_state: provider.registryState || "Novy",
     linked_client_id: linkedClient?.onlineId || (isUuid(linkedClient?.id) ? linkedClient.id : null),
@@ -2768,6 +2773,8 @@ function providerFromSupabase(row, clientLegacyByOnline) {
     email: row.email || "",
     phone: normalizePhoneNumber(row.phone || ""),
     insurance: row.insurance || "",
+    staff: row.staff || "",
+    sourceUrl: row.source_url || "",
     source: row.source || "register poskytovateľov",
     registryState: row.registry_state === "Importovane" ? "Importovane" : "Novy",
     linkedClientId: clientLegacyByOnline.get(row.linked_client_id) || "",
@@ -3163,6 +3170,7 @@ function openProviderDetail(id) {
         <div><dt>IČO</dt><dd>${ico || "-"}</dd></div>
         <div><dt>IdZZ</dt><dd>${provider.idzz || "-"}</dd></div>
         <div><dt>Kontakt</dt><dd>${provider.email || "-"}${provider.phone ? `, ${provider.phone}` : ""}</dd></div>
+        <div><dt>Lekári / sestry</dt><dd>${provider.staff || "-"}</dd></div>
         <div><dt>Poisťovne</dt><dd>${provider.insurance || "-"}</dd></div>
         <div><dt>Zdroj</dt><dd>${provider.source || "-"} (${provider.sourceId || provider.id})</dd></div>
       </dl>

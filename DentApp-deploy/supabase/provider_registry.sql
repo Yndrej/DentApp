@@ -17,6 +17,8 @@ create table if not exists public.provider_registry (
   email text,
   phone text,
   insurance text,
+  staff text,
+  source_url text,
   source text,
   registry_state text not null default 'Novy',
   linked_client_id uuid references public.clients(id) on delete set null,
