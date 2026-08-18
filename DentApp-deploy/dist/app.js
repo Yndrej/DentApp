@@ -257,6 +257,31 @@ function ensureStateShape() {
     client.portalEnabled = client.portalEnabled ?? true;
     client.portalCode = client.portalCode || clientPortalCode(client);
   });
+  state.clientLocations = state.clientLocations || [];
+  state.clients.forEach((client) => {
+    const locations = state.clientLocations.filter((location) => location.clientId === client.id);
+    if (!locations.length) {
+      state.clientLocations.push({
+        id: `loc-${client.id}`,
+        clientId: client.id,
+        name: client.name || "Hlavná prevádzka",
+        idzz: client.providerIdzz || "",
+        addressStreet: client.addressStreet || "",
+        city: client.city || "",
+        addressZip: client.addressZip || "",
+        addressFloor: client.addressFloor || "",
+        contact: client.contact || "",
+        email: client.email || "",
+        phone: client.phone || "",
+        sourceSystem: client.sourceSystem || "DentApp",
+        sourceId: client.sourceId ? `client-main:${client.sourceId}` : `client-main:${client.id}`,
+        sourceNote: "Hlavná prevádzka vytvorená z profilu klienta.",
+        isPrimary: true,
+      });
+    } else if (!locations.some((location) => location.isPrimary)) {
+      locations[0].isPrimary = true;
+    }
+  });
   state.devices.forEach((device) => {
     device.photo = device.photo || "";
     device.invoiceIssued = Boolean(device.invoiceIssued || device.invoiceFile);
@@ -264,6 +289,7 @@ function ensureStateShape() {
     device.invoiceDate = device.invoiceDate || "";
     device.invoiceFile = device.invoiceFile || "";
     device.invoiceFileName = device.invoiceFileName || "";
+    device.locationId = device.locationId || primaryClientLocation(device.clientId)?.id || "";
     device.documentRecords = device.documentRecords || [];
   });
 }
@@ -412,6 +438,26 @@ function getClientDevices(clientId) {
   return state.devices.filter((device) => device.clientId === clientId);
 }
 
+function getClientLocations(clientId) {
+  return (state.clientLocations || []).filter((location) => location.clientId === clientId);
+}
+
+function primaryClientLocation(clientId) {
+  const locations = getClientLocations(clientId);
+  return locations.find((location) => location.isPrimary) || locations[0] || null;
+}
+
+function locationName(locationId) {
+  if (!locationId) return "";
+  const location = byId("clientLocations", locationId);
+  return location?.name || "";
+}
+
+function locationAddress(location) {
+  if (!location) return "";
+  return [location.addressStreet, location.addressZip, location.city, location.addressFloor].filter(Boolean).join(", ");
+}
+
 function getClientService(clientId) {
   return visibleServiceItems().filter((item) => item.clientId === clientId);
 }
@@ -493,7 +539,8 @@ function deviceName(id) {
 }
 
 function deviceLabel(device) {
-  return `${[cleanImportedValue(device.brand), cleanImportedValue(device.model)].filter(Boolean).join(" ") || "Zariadenie"} - SN ${cleanImportedValue(device.serial) || "neuvedené"}`;
+  const location = locationName(device.locationId);
+  return `${[cleanImportedValue(device.brand), cleanImportedValue(device.model)].filter(Boolean).join(" ") || "Zariadenie"}${location ? ` / ${location}` : ""} - SN ${cleanImportedValue(device.serial) || "neuvedené"}`;
 }
 
 function isDeviceInvoiced(device) {
@@ -614,6 +661,45 @@ function findClientByTypedValue(value) {
   if (!typed) return null;
   return state.clients.find((client) => client.name.toLowerCase() === typed)
     || state.clients.find((client) => clientSearchText(client).toLowerCase().includes(typed));
+}
+
+function locationPicker(clientId = "", selectedLocationId = "") {
+  const locations = getClientLocations(clientId);
+  return `
+    <label data-location-picker>
+      <span>Prevádzka</span>
+      <select name="locationId" ${locations.length ? "" : "disabled"}>
+        ${locations.length
+          ? locations.map((location) => `<option value="${location.id}" ${location.id === selectedLocationId ? "selected" : ""}>${escapeHtml(location.name || "Hlavná prevádzka")} ${location.idzz ? `- ${escapeHtml(location.idzz)}` : ""}</option>`).join("")
+          : `<option value="">Najprv vyberte firmu / ambulanciu</option>`}
+      </select>
+      <small class="field-hint">Firma môže mať viac prevádzok. Zariadenie priraďte ku konkrétnej prevádzke.</small>
+    </label>
+  `;
+}
+
+function updateLocationPicker(form, selectedLocationId = "") {
+  const clientInput = qs("[name='clientSearch']", form);
+  const clientIdInput = qs("[name='clientId']", form);
+  const select = qs("[name='locationId']", form);
+  if (!select) return;
+  const clientId = clientIdInput?.value || findClientByTypedValue(clientInput?.value || "")?.id || "";
+  const locations = getClientLocations(clientId);
+  const preferredId = locations.some((location) => location.id === selectedLocationId)
+    ? selectedLocationId
+    : (primaryClientLocation(clientId)?.id || locations[0]?.id || "");
+  select.innerHTML = locations.length
+    ? locations.map((location) => `<option value="${location.id}" ${location.id === preferredId ? "selected" : ""}>${escapeHtml(location.name || "Hlavná prevádzka")} ${location.idzz ? `- ${escapeHtml(location.idzz)}` : ""}</option>`).join("")
+    : `<option value="">Najprv vyberte firmu / ambulanciu</option>`;
+  select.disabled = !locations.length;
+}
+
+function initDeviceLocationPicker(form, selectedLocationId = "") {
+  const clientInput = qs("[name='clientSearch']", form);
+  const clientIdInput = qs("[name='clientId']", form);
+  clientInput?.addEventListener("input", () => updateLocationPicker(form, ""));
+  clientIdInput?.addEventListener("change", () => updateLocationPicker(form, ""));
+  updateLocationPicker(form, selectedLocationId);
 }
 
 function bindClientPickers(scope) {
@@ -1409,7 +1495,7 @@ function devicesTable(devices) {
           ${devices.map((device) => `
             <tr>
               <td data-label="Zariadenie"><button class="link-button" type="button" data-device-profile="${device.id}">${deviceName(device.id)}</button><br><small>${device.type} - ${device.location}</small></td>
-              <td data-label="Ambulancia">${clientName(device.clientId)}</td>
+              <td data-label="Ambulancia">${clientName(device.clientId)}${locationName(device.locationId) ? `<br><small>${locationName(device.locationId)}</small>` : ""}</td>
               <td data-label="Sériové číslo">${device.serial}</td>
               <td data-label="Inštalácia">${formatDate(device.installed)}</td>
               <td data-label="Záruka">${formatOptionalDate(device.warrantyUntil)}</td>
@@ -2419,10 +2505,31 @@ async function saveClientToSupabase(client) {
   return rows[0] || null;
 }
 
-function mapDeviceForSupabase(device, clientIdByLegacy) {
+function mapClientLocationForSupabase(location, clientIdByLegacy) {
+  return {
+    legacy_id: location.id,
+    client_id: location.clientId ? (clientIdByLegacy.get(location.clientId) || (isUuid(location.clientId) ? location.clientId : null)) : null,
+    name: location.name || "",
+    idzz: location.idzz || "",
+    address_street: location.addressStreet || "",
+    address_city: location.city || "",
+    address_zip: location.addressZip || "",
+    address_floor: location.addressFloor || "",
+    contact: location.contact || "",
+    email: location.email || "",
+    phone: location.phone || "",
+    source_system: location.sourceSystem || null,
+    source_id: location.sourceId || null,
+    source_note: location.sourceNote || "",
+    is_primary: Boolean(location.isPrimary),
+  };
+}
+
+function mapDeviceForSupabase(device, clientIdByLegacy, locationIdByLegacy = new Map()) {
   return {
     legacy_id: device.id,
     client_id: device.clientId ? (clientIdByLegacy.get(device.clientId) || (isUuid(device.clientId) ? device.clientId : null)) : null,
+    location_id: device.locationId ? (locationIdByLegacy.get(device.locationId) || (isUuid(device.locationId) ? device.locationId : null)) : null,
     type: device.type || "",
     brand: device.brand || "",
     model: device.model || "",
@@ -2443,7 +2550,12 @@ function mapDeviceForSupabase(device, clientIdByLegacy) {
 
 function devicePayloadForSupabase(device) {
   const client = byId("clients", device.clientId);
-  return mapDeviceForSupabase(device, new Map([[device.clientId, client?.onlineId || (isUuid(client?.id) ? client.id : null)]]));
+  const location = byId("clientLocations", device.locationId);
+  return mapDeviceForSupabase(
+    device,
+    new Map([[device.clientId, client?.onlineId || (isUuid(client?.id) ? client.id : null)]]),
+    new Map([[device.locationId, location?.onlineId || (isUuid(location?.id) ? location.id : null)]])
+  );
 }
 
 function deviceHasInvoicePayload(device) {
@@ -2463,6 +2575,23 @@ function withoutInvoiceColumns(payload) {
 async function saveDeviceToSupabase(device) {
   if (dataMode !== "supabase") return null;
   if (!supabaseAuth?.access_token) throw new Error("Najprv sa prihláste cez Supabase Auth.");
+  if (device.locationId && device.clientId) {
+    const location = byId("clientLocations", device.locationId);
+    const client = byId("clients", device.clientId);
+    const onlineClientId = client?.onlineId || (isUuid(client?.id) ? client.id : null);
+    if (location && onlineClientId && !location.onlineId) {
+      try {
+        const rows = await upsertSupabaseRows(
+          "client_locations",
+          [mapClientLocationForSupabase(location, new Map([[device.clientId, onlineClientId]]))]
+        );
+        if (rows[0]?.id) location.onlineId = rows[0].id;
+      } catch (error) {
+        if (!/client_locations|schema cache|permission|404/i.test(error.message || "")) throw error;
+        console.warn("Prevádzku sa nepodarilo uložiť do Supabase, pokračujem bez nej:", error);
+      }
+    }
+  }
   let payload = devicePayloadForSupabase(device);
   if (device.clientId && !payload.client_id) {
     await loadSupabaseDataIntoState();
@@ -2702,11 +2831,12 @@ function clientFromSupabase(row) {
   };
 }
 
-function deviceFromSupabase(row, clientLegacyByOnline) {
+function deviceFromSupabase(row, clientLegacyByOnline, locationLegacyByOnline = new Map()) {
   return {
     id: row.legacy_id || row.id,
     onlineId: row.id,
     clientId: clientLegacyByOnline.get(row.client_id) || row.client_id,
+    locationId: locationLegacyByOnline.get(row.location_id) || row.location_id || "",
     type: row.type || "",
     brand: row.brand || "",
     model: row.model || "",
@@ -2788,6 +2918,27 @@ function documentFromSupabase(row, clientLegacyByOnline, deviceLegacyByOnline, s
   };
 }
 
+function clientLocationFromSupabase(row, clientLegacyByOnline) {
+  return {
+    id: row.legacy_id || row.id,
+    onlineId: row.id,
+    clientId: clientLegacyByOnline.get(row.client_id) || row.client_id,
+    name: row.name || "",
+    idzz: row.idzz || "",
+    addressStreet: row.address_street || "",
+    city: row.address_city || "",
+    addressZip: row.address_zip || "",
+    addressFloor: row.address_floor || "",
+    contact: row.contact || "",
+    email: row.email || "",
+    phone: normalizePhoneNumber(row.phone || ""),
+    sourceSystem: row.source_system || "",
+    sourceId: row.source_id || "",
+    sourceNote: row.source_note || "",
+    isPrimary: Boolean(row.is_primary),
+  };
+}
+
 function providerFromSupabase(row, clientLegacyByOnline) {
   const ico = row.ico || extractIcoFromIdzz(row.idzz || row.source_id || "");
   return {
@@ -2826,9 +2977,13 @@ function attachDocumentRecords() {
 
 async function loadSupabaseDataIntoState() {
   if (!supabaseAuth?.access_token) throw new Error("Najprv sa prihláste cez Supabase Auth.");
-  const [profileRows, clientsRows, devicesRows, inventoryRows, serviceRows, documentRows, providerRows] = await Promise.all([
+  const [profileRows, clientsRows, locationRows, devicesRows, inventoryRows, serviceRows, documentRows, providerRows] = await Promise.all([
     supabaseRequest("users_profile?select=*&order=display_name.asc"),
     supabaseRequest("clients?select=*&order=name.asc"),
+    supabaseRequest("client_locations?select=*&order=name.asc").catch((error) => {
+      console.warn("Prevadzky klientov sa nepodarilo nacitat zo Supabase:", error);
+      return [];
+    }),
     supabaseRequest("devices?select=*&order=serial.asc"),
     supabaseRequest("inventory?select=*&order=name.asc"),
     supabaseRequest("service_tasks?select=*&order=due.desc"),
@@ -2842,7 +2997,9 @@ async function loadSupabaseDataIntoState() {
   const onlineUsers = profileRows.map(profileToUser);
   const clients = clientsRows.map(clientFromSupabase);
   const clientLegacyByOnline = new Map(clientsRows.map((row) => [row.id, row.legacy_id || row.id]));
-  const devices = devicesRows.map((row) => deviceFromSupabase(row, clientLegacyByOnline));
+  const clientLocations = locationRows.map((row) => clientLocationFromSupabase(row, clientLegacyByOnline));
+  const locationLegacyByOnline = new Map(locationRows.map((row) => [row.id, row.legacy_id || row.id]));
+  const devices = devicesRows.map((row) => deviceFromSupabase(row, clientLegacyByOnline, locationLegacyByOnline));
   const deviceLegacyByOnline = new Map(devicesRows.map((row) => [row.id, row.legacy_id || row.id]));
   const service = serviceRows.map((row) => serviceFromSupabase(row, clientLegacyByOnline, deviceLegacyByOnline));
   const serviceLegacyByOnline = new Map(serviceRows.map((row) => [row.id, row.legacy_id || row.id]));
@@ -2852,6 +3009,7 @@ async function loadSupabaseDataIntoState() {
     ...state,
     users: onlineUsers,
     clients,
+    clientLocations,
     devices,
     inventory: inventoryRows.map(inventoryFromSupabase),
     service,
@@ -2890,10 +3048,18 @@ async function migrateLocalDataToSupabase() {
     const clients = await upsertSupabaseRows("clients", state.clients.map(mapClientForSupabase));
     const clientIdByLegacy = new Map(clients.map((client) => [client.legacy_id, client.id]));
 
+    supabaseStatus = { state: "Migrácia", detail: "Odosielam prevádzky klientov..." };
+    render();
+    const locationRows = (state.clientLocations || [])
+      .map((location) => mapClientLocationForSupabase(location, clientIdByLegacy))
+      .filter((location) => location.client_id);
+    const locations = locationRows.length ? await upsertSupabaseRows("client_locations", locationRows) : [];
+    const locationIdByLegacy = new Map(locations.map((location) => [location.legacy_id, location.id]));
+
     supabaseStatus = { state: "Migrácia", detail: "Odosielam zariadenia..." };
     render();
     const deviceRows = state.devices
-      .map((device) => mapDeviceForSupabase(device, clientIdByLegacy))
+      .map((device) => mapDeviceForSupabase(device, clientIdByLegacy, locationIdByLegacy))
       .filter((device) => device.client_id);
     const devices = await upsertSupabaseRows("devices", deviceRows);
     const deviceIdByLegacy = new Map(devices.map((device) => [device.legacy_id, device.id]));
@@ -2919,7 +3085,7 @@ async function migrateLocalDataToSupabase() {
 
     supabaseStatus = {
       state: "Migrácia hotová",
-      detail: `Odoslané: ${clients.length} klientov, ${devices.length} zariadení, ${state.inventory.length} skladových položiek, ${serviceRows.length} servisných úloh, ${documentRows.length} dokumentov.`,
+      detail: `Odoslané: ${clients.length} klientov, ${locations.length} prevádzok, ${devices.length} zariadení, ${state.inventory.length} skladových položiek, ${serviceRows.length} servisných úloh, ${documentRows.length} dokumentov.`,
     };
     addAudit("Migrácia do Supabase", supabaseStatus.detail);
     saveState();
@@ -3323,6 +3489,7 @@ function openClientProfile(id) {
   const service = getClientService(id);
   const notes = state.notes.filter((note) => note.clientId === id);
   const packets = state.documentPackets.filter((packet) => packet.clientId === id);
+  const locations = getClientLocations(id);
   openModal(`Profil ambulancie: ${client.name}`, `
     <div class="profile-grid">
       <section class="profile-card">
@@ -3346,6 +3513,19 @@ function openClientProfile(id) {
         </div>
       </section>
       <section class="profile-card">
+        <h3>Prevádzky</h3>
+        <div class="timeline">
+          ${locations.map((location) => `
+            <article class="timeline-item">
+              <strong>${escapeHtml(location.name || "Hlavná prevádzka")}</strong>
+              <small>${escapeHtml(locationAddress(location) || "Adresa nie je doplnená")}</small>
+              ${location.idzz ? `<small>IDZZ: ${escapeHtml(location.idzz)}</small>` : ""}
+              ${location.isPrimary ? `<span class="status-pill status-ok">Hlavná</span>` : ""}
+            </article>
+          `).join("") || "Bez prevádzok."}
+        </div>
+      </section>
+      <section class="profile-card">
         <div class="panel-header">
           <h3>Zariadenia ambulancie</h3>
           <button class="primary-action" type="button" data-add-device-client="${client.id}">Pridať zariadenie</button>
@@ -3353,7 +3533,7 @@ function openClientProfile(id) {
         ${devices.length ? devices.map((device) => `
           <article class="timeline-item">
             <strong><button class="link-button" type="button" data-device-profile="${device.id}">${deviceName(device.id)}</button></strong>
-            <small>SN ${cleanImportedValue(device.serial) || "neuvedené"} - ${device.warrantyUntil ? `záruka do ${formatOptionalDate(device.warrantyUntil)}` : "záruka neuvedená"}</small>
+            <small>${locationName(device.locationId) ? `${locationName(device.locationId)} - ` : ""}SN ${cleanImportedValue(device.serial) || "neuvedené"} - ${device.warrantyUntil ? `záruka do ${formatOptionalDate(device.warrantyUntil)}` : "záruka neuvedená"}</small>
             <span class="status-pill ${statusClass(device.status)}">${device.status}</span>
             <span class="status-pill ${isDeviceInvoiced(device) ? "status-ok" : "status-planned"}">${isDeviceInvoiced(device) ? "Fakturované" : "Bez FA"}</span>
             <div class="button-row">
@@ -3395,6 +3575,7 @@ function openDeviceProfile(id) {
         <h3>Technické údaje</h3>
         <dl class="definition-list">
           <div><dt>Ambulancia</dt><dd>${clientName(device.clientId)}</dd></div>
+          <div><dt>Prevádzka</dt><dd>${locationName(device.locationId) || "Hlavná prevádzka"}</dd></div>
           <div><dt>Typ</dt><dd>${device.type}</dd></div>
           <div><dt>Model</dt><dd>${device.brand} ${device.model}</dd></div>
           <div><dt>Sériové číslo</dt><dd>${device.serial}</dd></div>
@@ -3564,6 +3745,7 @@ function openDeviceForm(id = "", presetClientId = "") {
   openModal(id ? "Upraviť zariadenie" : "Pridať zariadenie", `
     <form class="form-grid" id="deviceForm" data-edit-id="${id}">
       ${clientPicker(selectedClientId, false, false)}
+      ${locationPicker(selectedClientId, device.locationId)}
       ${input("type", "Typ", "CBCT", "text", device.type)}
       ${input("brand", "Značka", "Vatech", "text", device.brand)}
       ${input("model", "Model", "Green X", "text", device.model)}
@@ -3593,7 +3775,9 @@ function openDeviceForm(id = "", presetClientId = "") {
     </form>
   `, (modal) => {
     bindClientPickers(modal);
-    qs("#deviceForm", modal).addEventListener("submit", saveDevice);
+    const form = qs("#deviceForm", modal);
+    initDeviceLocationPicker(form, device.locationId || "");
+    form.addEventListener("submit", saveDevice);
   });
 }
 
@@ -4754,6 +4938,12 @@ async function saveDevice(event) {
   const values = formValues(form);
   const clientId = selectedClientId(form);
   values.clientId = clientId;
+  if (values.locationId && !getClientLocations(clientId).some((location) => location.id === values.locationId)) {
+    values.locationId = "";
+  }
+  if (!values.locationId && clientId) {
+    values.locationId = primaryClientLocation(clientId)?.id || "";
+  }
   delete values.clientSearch;
   const photo = await fileToDataUrl(qs("[name='photoFile']", form)?.files?.[0]);
   const invoiceInput = qs("[name='invoiceFile']", form);
