@@ -3004,16 +3004,16 @@ function attachDocumentRecords() {
 async function loadSupabaseDataIntoState() {
   if (!supabaseAuth?.access_token) throw new Error("Najprv sa prihláste cez Supabase Auth.");
   const [profileRows, clientsRows, locationRows, devicesRows, inventoryRows, serviceRows, documentRows, providerRows] = await Promise.all([
-    supabaseRequest("users_profile?select=*&order=display_name.asc"),
-    supabaseRequest("clients?select=*&order=name.asc"),
-    supabaseRequest("client_locations?select=*&order=name.asc").catch((error) => {
+    supabaseRequestAll("users_profile?select=*&order=display_name.asc"),
+    supabaseRequestAll("clients?select=*&order=name.asc"),
+    supabaseRequestAll("client_locations?select=*&order=name.asc").catch((error) => {
       console.warn("Prevadzky klientov sa nepodarilo nacitat zo Supabase:", error);
       return [];
     }),
-    supabaseRequest("devices?select=*&order=serial.asc"),
-    supabaseRequest("inventory?select=*&order=name.asc"),
-    supabaseRequest("service_tasks?select=*&order=due.desc"),
-    supabaseRequest("document_packets?select=*&order=created_at.desc"),
+    supabaseRequestAll("devices?select=*&order=serial.asc"),
+    supabaseRequestAll("inventory?select=*&order=name.asc"),
+    supabaseRequestAll("service_tasks?select=*&order=due.desc"),
+    supabaseRequestAll("document_packets?select=*&order=created_at.desc"),
     supabaseRequestAll("provider_registry?select=*&order=name.asc").catch((error) => {
       console.warn("Register ambulancii sa nepodarilo nacitat zo Supabase:", error);
       return [];
