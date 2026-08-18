@@ -1,9 +1,9 @@
-const DENTAPP_CACHE = "dentapp-shell-v36";
+const DENTAPP_CACHE = "dentapp-shell-v37";
 const SHELL_FILES = [
   "/",
   "/index.html",
   "/styles.css",
-  "/app.js?v=20260818-provider-detail-fields",
+  "/app.js?v=20260818-mksoft-import",
   "/data.js",
   "/supabase-config.js",
   "/manifest.json",

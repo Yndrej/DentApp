@@ -1,1 +1,7 @@
 dist/
+reports/
+**/reports/
+supabase/mksoft_clients_import.sql
+**/supabase/mksoft_clients_import.sql
+supabase/provider_registry_sample.*
+**/supabase/provider_registry_sample.*

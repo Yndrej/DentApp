@@ -246,6 +246,13 @@ function ensureStateShape() {
     client.billingCity = client.billingCity || "";
     client.billingCompanyId = client.billingCompanyId || "";
     client.billingTaxId = client.billingTaxId || "";
+    client.sourceSystem = client.sourceSystem || "";
+    client.sourceId = client.sourceId || "";
+    client.sourceRowId = client.sourceRowId || "";
+    client.externalIcoRaw = client.externalIcoRaw || "";
+    client.providerIdzz = client.providerIdzz || "";
+    client.registryProviderId = client.registryProviderId || "";
+    client.registryMatchState = client.registryMatchState || "";
     client.photo = client.photo || "";
     client.portalEnabled = client.portalEnabled ?? true;
     client.portalCode = client.portalCode || clientPortalCode(client);
@@ -525,6 +532,11 @@ function clientSearchText(client) {
     client.billingStreet,
     client.billingCity,
     client.billingZip,
+    client.externalIcoRaw,
+    client.providerIdzz,
+    client.registryMatchState,
+    client.sourceSystem,
+    client.sourceId,
     client.contact,
     client.email,
     client.phone,
@@ -1357,7 +1369,7 @@ function clientsTable(clients) {
         <tbody>
           ${clients.map((client) => `
             <tr>
-              <td data-label="Ambulancia"><button class="link-button" type="button" data-client-profile="${client.id}">${client.name}</button><br><small>${client.segment}</small></td>
+              <td data-label="Ambulancia"><button class="link-button" type="button" data-client-profile="${client.id}">${client.name}</button><br><small>${client.segment}</small>${clientImportBadges(client)}</td>
               <td data-label="Adresa">${clientAddress(client)}</td>
               <td data-label="Kontakt">${client.contact}<br><small>${client.email}</small></td>
               <td data-label="Zariadenia">${getClientDevices(client.id).length}</td>
@@ -1743,6 +1755,14 @@ function serviceActionButtons(item) {
       </div>
     </details>
   `;
+}
+
+function clientImportBadges(client) {
+  const badges = [];
+  if (client.sourceSystem === "MKsoft") badges.push(`<span class="status-pill status-danger">MKsoft</span>`);
+  if (client.providerIdzz) badges.push(`<span class="status-pill status-ok">e-VÚC</span>`);
+  if (client.registryMatchState === "Vyžaduje kontrolu e-VÚC prevádzky") badges.push(`<span class="status-pill status-planned">Kontrola e-VÚC</span>`);
+  return badges.length ? `<div class="badge-row">${badges.join("")}</div>` : "";
 }
 
 function serviceTable(items) {
@@ -2375,6 +2395,13 @@ function mapClientForSupabase(client) {
     billing_zip: client.billingZip || "",
     billing_company_id: client.billingCompanyId || "",
     billing_tax_id: client.billingTaxId || "",
+    source_system: client.sourceSystem || null,
+    source_id: client.sourceId || null,
+    source_row_id: client.sourceRowId || null,
+    external_ico_raw: client.externalIcoRaw || "",
+    provider_idzz: client.providerIdzz || null,
+    registry_provider_id: client.registryProviderId || null,
+    registry_match_state: client.registryMatchState || "",
     photo_path: client.photo || "",
     portal_enabled: client.portalEnabled ?? true,
     note: client.note || "",
@@ -2662,6 +2689,13 @@ function clientFromSupabase(row) {
     billingZip: row.billing_zip || "",
     billingCompanyId: row.billing_company_id || "",
     billingTaxId: row.billing_tax_id || "",
+    sourceSystem: row.source_system || "",
+    sourceId: row.source_id || "",
+    sourceRowId: row.source_row_id || "",
+    externalIcoRaw: row.external_ico_raw || "",
+    providerIdzz: row.provider_idzz || "",
+    registryProviderId: row.registry_provider_id || "",
+    registryMatchState: row.registry_match_state || "",
     portalEnabled: row.portal_enabled ?? true,
     note: row.note || "",
     photo: row.photo_path || "",

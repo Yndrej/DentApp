@@ -919,6 +919,13 @@ tbody tr:hover {
   align-items: center;
 }
 
+.badge-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 6px;
+}
+
 .status-pill,
 .role-pill {
   display: inline-flex;
@@ -945,7 +952,8 @@ tbody tr:hover {
 }
 
 .status-critical,
-.status-low {
+.status-low,
+.status-danger {
   color: #8d2f2f;
   background: rgba(201, 79, 79, 0.15);
 }
