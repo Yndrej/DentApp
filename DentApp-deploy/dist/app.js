@@ -557,6 +557,22 @@ function inventoryStatusLabel(item) {
   return "OK";
 }
 
+function inventoryItemLabel(item) {
+  return [item.sku, item.name].filter(Boolean).join(" - ");
+}
+
+function inventoryPartLine(item) {
+  return `${inventoryItemLabel(item)} | 1 | |`;
+}
+
+function findInventoryItemByInput(value = "") {
+  const typed = normalizeSearch(value);
+  if (!typed) return null;
+  return state.inventory.find((item) => normalizeSearch(item.sku) === typed)
+    || state.inventory.find((item) => normalizeSearch(inventoryItemLabel(item)) === typed)
+    || state.inventory.find((item) => normalizeSearch(inventoryItemLabel(item)).includes(typed));
+}
+
 function invoiceLabel(device) {
   if (!isDeviceInvoiced(device)) return "Nefakturované";
   return device.invoiceNumber ? `Fakturované - ${device.invoiceNumber}` : "Fakturované";
@@ -4452,6 +4468,16 @@ function openServiceProtocolWorkflow(serviceId) {
         <label class="full"><span>Vykonaná kontrola a zistený stav</span><textarea name="inspection" placeholder="Zistený stav zariadenia a pracoviska."></textarea></label>
         <label class="full"><span>Špecifikácia, typ, výrobné číslo</span><textarea name="specification">${escapeHtml(`${device?.type || ""} ${device?.brand || ""} ${device?.model || ""} SN ${device?.serial || ""}`.trim())}</textarea></label>
         <label class="full"><span>Popis vykonanej práce</span><textarea name="workDescription" placeholder="Popíšte vykonaný servisný zásah."></textarea></label>
+        <div class="full catalog-part-picker" data-service-part-picker>
+          <label>
+            <span>Pridať diel z MKsoft katalógu</span>
+            <input type="text" name="catalogPartSearch" list="serviceCatalogPartOptions" placeholder="Začnite písať kód, napr. AD 200, SU..., alebo názov dielu">
+          </label>
+          <datalist id="serviceCatalogPartOptions">
+            ${state.inventory.map((item) => `<option value="${escapeHtml(inventoryItemLabel(item))}" label="${escapeHtml([item.manufacturer, item.itemType || item.category].filter(Boolean).join(" / "))}"></option>`).join("")}
+          </datalist>
+          <button class="ghost-action" type="button" data-add-catalog-part>Pridať do dielov</button>
+        </div>
         <label class="full"><span>Náhradné diely</span><textarea name="parts" placeholder="Názov dielu | ks | cena bez DPH | cena s DPH"></textarea></label>
       </section>
       <section class="signature-pad-grid">
@@ -4469,11 +4495,38 @@ function openServiceProtocolWorkflow(serviceId) {
     const form = qs("#serviceProtocolForm", modal);
     const update = () => updateServiceProtocolPreview(form);
     initSignaturePads(form, update);
+    initServiceCatalogPartPicker(form, update);
     update();
     qsa("input, textarea, select", form).forEach((field) => field.addEventListener("input", update));
     qs("[data-refresh-service-protocol-preview]", form).addEventListener("click", update);
     qs("[data-print-service-protocol-preview]", form).addEventListener("click", () => printServiceProtocolPreview(form));
     form.addEventListener("submit", saveServiceProtocol);
+  });
+}
+
+function initServiceCatalogPartPicker(form, onChange) {
+  const input = qs("[name='catalogPartSearch']", form);
+  const button = qs("[data-add-catalog-part]", form);
+  const parts = qs("[name='parts']", form);
+  if (!input || !button || !parts) return;
+  const addPart = () => {
+    const item = findInventoryItemByInput(input.value);
+    if (!item) {
+      alert("Položka sa v MKsoft katalógu nenašla. Skúste zadať presnejší kód alebo názov.");
+      return;
+    }
+    const line = inventoryPartLine(item);
+    parts.value = [parts.value.trim(), line].filter(Boolean).join("\n");
+    input.value = "";
+    parts.dispatchEvent(new Event("input", { bubbles: true }));
+    onChange?.();
+  };
+  button.addEventListener("click", addPart);
+  input.addEventListener("keydown", (event) => {
+    if (event.key === "Enter") {
+      event.preventDefault();
+      addPart();
+    }
   });
 }
 

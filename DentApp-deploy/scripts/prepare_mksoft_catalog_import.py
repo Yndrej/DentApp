@@ -16,6 +16,7 @@ PREFIX_MANUFACTURERS = {
     "VA": "Vatech",
     "VT": "Vatech",
     "WH": "W&H",
+    "SU": "Support"
 }
 
 
