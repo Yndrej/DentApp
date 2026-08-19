@@ -4980,7 +4980,23 @@ function normalizeSerialCandidate(value = "") {
     .replace(/([A-Z0-9]{2,4})\s+([A-Z0-9]{3,}[-/][A-Z0-9]{3,})/gi, "$1$2")
     .replace(/\s*-\s*/g, "-")
     .replace(/\s*\/\s*/g, "/")
-    .replace(/^[^A-Z0-9]+|[^A-Z0-9]+$/gi, "");
+    .replace(/^[^A-Z0-9]+|[^A-Z0-9]+$/gi, "")
+    .toUpperCase();
+}
+
+function isPlausibleSerialCandidate(value = "") {
+  const candidate = normalizeSerialCandidate(value);
+  if (!candidate) return false;
+  if (candidate.length < 5 || candidate.length > 40) return false;
+  if (!/\d/.test(candidate)) return false;
+  if (!/^[A-Z0-9\-/.]+$/.test(candidate)) return false;
+  if (/^[A-Z]+$/.test(candidate)) return false;
+  if (/\b(STOOL|DOCTORS|CHARCOAL|KOMPRESOR|MODEL|PRODUCT|COUNTRY|CONTENTS|ACCESSORY)\b/i.test(candidate)) return false;
+  return true;
+}
+
+function firstPlausibleSerial(...values) {
+  return values.map(normalizeSerialCandidate).find(isPlausibleSerialCandidate) || "";
 }
 
 function firstRegexMatch(text, patterns) {
@@ -5047,11 +5063,12 @@ function parseDeviceLabelText(rawText = "") {
 
   const brand = manufacturers.find(([, pattern]) => pattern.test(text))?.[0] || "";
   const serialFromLine = serialLineValue(lines);
-  const serial = normalizeSerialCandidate(serialFromLine
-    || firstRegexMatch(text, serialPatterns)
-    || text.match(/\b[A-Z0-9]{2,}[-/][A-Z0-9][A-Z0-9\-/.]{3,}\b/i)?.[0]
-    || text.match(/\b\d{6,}[-/]\d{3,}\b/)?.[0]
-    || "");
+  const serial = firstPlausibleSerial(
+    serialFromLine,
+    firstRegexMatch(text, serialPatterns),
+    text.match(/\b[A-Z0-9]{2,}[-/][A-Z0-9][A-Z0-9\-/.]{3,}\b/i)?.[0],
+    text.match(/\b\d{6,}[-/]\d{3,}\b/)?.[0]
+  );
   const productName = cleanImportedValue(firstLineValue(lines, [/^product\s*name\b/i, /^výrobok\b/i]));
   const modelFromLine = cleanImportedValue(firstLineValue(lines, [/^model\b/i, /^typ\b/i]));
   const modelCode = modelFromLine || cleanImportedValue(firstRegexMatch(text, modelPatterns));
@@ -5127,6 +5144,7 @@ function initDeviceLabelScanner(form) {
       result.textContent = found.length
         ? `Načítané cez ${decoded.source}: ${found.join(", ")}. Skontrolujte údaje pred uložením.`
         : `Štítok sa načítal, ale údaje neboli v známom formáte: ${raw.slice(0, 120)}`;
+      if (found.length && !parsed.serial) result.textContent += " Sériové číslo sa nepodarilo spoľahlivo rozpoznať, dopíšte ho ručne.";
       if (!applied.length && found.length) result.textContent += " Polia už boli vyplnené, preto sa neprepísali.";
     } catch (error) {
       result.textContent = error.message;
