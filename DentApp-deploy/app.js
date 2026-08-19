@@ -5020,6 +5020,8 @@ function isPlausibleSerialCandidate(value = "") {
   if (!/\d/.test(candidate)) return false;
   if (!/^[A-Z0-9\-/.]+$/.test(candidate)) return false;
   if (/^[A-Z]+$/.test(candidate)) return false;
+  if (/^(VEX|PAX|GREEN|EZRAY|DK50|MODEL|TYPE|PRODUCT|REF)$/i.test(candidate)) return false;
+  if (/^(VEX|PAX|EZRAY|GREEN|DK50|VISTASCAN|ORTHOPHOS|PRIMOS|FOCUS|HELIODENT)[-/. ]/i.test(candidate)) return false;
   if (/\b(STOOL|DOCTORS|CHARCOAL|KOMPRESOR|MODEL|PRODUCT|COUNTRY|CONTENTS|ACCESSORY)\b/i.test(candidate)) return false;
   return true;
 }
@@ -5054,6 +5056,27 @@ function extractSerialLikeCandidate(text = "") {
     /\b[A-Z0-9]{2,8}-[A-Z0-9]{4,12}(?:-[A-Z0-9]{2,8})?\b/i
   ];
   return patterns.map((pattern) => normalized.match(pattern)?.[0]).find(Boolean) || "";
+}
+
+function extractBrandSerialCandidate(text = "", brand = "") {
+  const normalized = String(text || "")
+    .toUpperCase()
+    .replace(/[–—]/g, "-")
+    .replace(/\s*-\s*/g, "-")
+    .replace(/\s+/g, " ");
+  if (brand === "Vatech") {
+    return normalized.match(/\b\d{3}-\d{5,7}\b/)?.[0] || "";
+  }
+  if (brand === "Ekom") {
+    return normalized.match(/\bV\d{4,}-\d{2}-\d{4}\b/)?.[0] || "";
+  }
+  if (brand === "A-dec") {
+    return normalized.match(/\b\d{2}L\d{3}-A\d{3,6}\b/)?.[0]
+      || normalized.match(/\b\d{2}L\s*\d{3}-A\d{3,6}\b/)?.[0]
+      || normalized.match(/\b\d{3}-A\d{3,6}\b/)?.[0]
+      || "";
+  }
+  return extractSerialLikeCandidate(text);
 }
 
 function completeAdecSerialPrefix(serial = "", text = "") {
@@ -5126,7 +5149,7 @@ function parseDeviceLabelText(rawText = "") {
   let serial = firstPlausibleSerial(
     serialFromLine,
     firstRegexMatch(text, serialPatterns),
-    extractSerialLikeCandidate(text),
+    extractBrandSerialCandidate(text, brand),
     text.match(/\b[A-Z0-9]{2,}[-/][A-Z0-9][A-Z0-9\-/.]{3,}\b/i)?.[0],
     text.match(/\b\d{6,}[-/]\d{3,}\b/)?.[0]
   );
