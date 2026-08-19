@@ -1289,6 +1289,33 @@ tbody tr:hover {
   min-height: 44px;
 }
 
+.label-scan-fieldset {
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: end;
+  gap: 12px;
+}
+
+.label-scan-fieldset legend,
+.label-scan-fieldset .form-note {
+  grid-column: 1 / -1;
+}
+
+.label-scan-fieldset .label-scan-input {
+  display: grid;
+  align-items: stretch;
+  gap: 7px;
+}
+
+.label-scan-fieldset input[type="file"] {
+  width: 100%;
+  min-height: 44px;
+}
+
+.label-scan-fieldset .secondary-action {
+  min-height: 44px;
+  padding-inline: 16px;
+}
+
 .handover-flow {
   display: grid;
   gap: 16px;
@@ -1967,7 +1994,8 @@ tbody tr:hover {
   .summary-grid,
   .signature-pad-grid,
   .signature-grid,
-  .quick-client-grid {
+  .quick-client-grid,
+  .label-scan-fieldset {
     grid-template-columns: 1fr;
   }
 

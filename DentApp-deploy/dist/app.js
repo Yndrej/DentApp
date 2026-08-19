@@ -3776,6 +3776,15 @@ function openDeviceForm(id = "", presetClientId = "") {
       ${input("brand", "Značka", "Vatech", "text", device.brand)}
       ${input("model", "Model", "Green X", "text", device.model)}
       ${input("serial", "Sériové číslo", "SN-...", "text", device.serial)}
+      <fieldset class="full checklist label-scan-fieldset">
+        <legend>Načítať zo štítku</legend>
+        <label class="full label-scan-input">
+          <span>Fotografia štítku alebo krabice</span>
+          <input name="labelPhotoFile" type="file" accept="image/*" capture="environment">
+        </label>
+        <button class="secondary-action" type="button" data-scan-device-label>Načítať údaje</button>
+        <p class="form-note full" data-label-scan-result>Funguje pre QR alebo čiarový kód na štítku. Po načítaní údaje skontrolujte.</p>
+      </fieldset>
       ${input("location", "Umiestnenie", "RTG miestnosť", "text", device.location, false)}
       ${input("installed", "Dátum inštalácie", "", "date", device.installed, false)}
       ${input("warrantyUntil", "Záruka do", "", "date", device.warrantyUntil, false)}
@@ -3803,6 +3812,7 @@ function openDeviceForm(id = "", presetClientId = "") {
     bindClientPickers(modal);
     const form = qs("#deviceForm", modal);
     initDeviceLocationPicker(form, device.locationId || "");
+    initDeviceLabelScanner(form);
     form.addEventListener("submit", saveDevice);
   });
 }
@@ -4889,6 +4899,119 @@ function fileToDataUrl(file) {
   });
 }
 
+async function barcodeDetectorFormats() {
+  const preferred = ["qr_code", "code_128", "code_39", "code_93", "data_matrix", "ean_13", "ean_8", "itf", "upc_a", "upc_e", "pdf417"];
+  if (!("BarcodeDetector" in window)) return [];
+  if (typeof BarcodeDetector.getSupportedFormats !== "function") return preferred;
+  const supported = await BarcodeDetector.getSupportedFormats();
+  return preferred.filter((format) => supported.includes(format));
+}
+
+async function decodeDeviceLabelImage(file) {
+  if (!file?.size) throw new Error("Najprv vyberte alebo odfoťte štítok.");
+  if (!("BarcodeDetector" in window)) {
+    throw new Error("Tento prehliadač nevie čítať QR/čiarové kódy z fotografie. Údaje dopíšte ručne alebo skúste Chrome/Edge na Androide.");
+  }
+  const formats = await barcodeDetectorFormats();
+  const detector = new BarcodeDetector(formats.length ? { formats } : undefined);
+  const bitmap = await createImageBitmap(file);
+  try {
+    const codes = await detector.detect(bitmap);
+    const values = codes.map((code) => code.rawValue).filter(Boolean);
+    if (!values.length) throw new Error("Na fotke sa nepodarilo nájsť čitateľný QR alebo čiarový kód.");
+    return values.join("\n");
+  } finally {
+    bitmap.close?.();
+  }
+}
+
+function parseDeviceLabelText(rawText = "") {
+  const raw = String(rawText || "").trim();
+  const text = raw.replace(/\s+/g, " ");
+  const serialPatterns = [
+    /\b(?:S\/N|SN|SERIAL|SERIAL NO\.?|SER\.?\s*NO\.?|VYROBNE CISLO|VÝROBNÉ ČÍSLO|SERIOVE CISLO|SÉRIOVÉ ČÍSLO)\s*[:#-]?\s*([A-Z0-9][A-Z0-9\-/.]{3,})\b/i,
+    /\b(?:SN|S\/N)\s*([A-Z0-9][A-Z0-9\-/.]{3,})\b/i
+  ];
+  const modelPatterns = [
+    /\b(?:MODEL|MOD\.?|TYP|TYPE)\s*[:#-]?\s*([A-Z0-9][A-Z0-9\-/. ]{2,40})\b/i,
+    /\b(PAX[- ]?I?3D|GREEN X|VEX\d+[A-Z0-9-]*|VISTASCAN|ORTHOPHOS|PRIMOS|FOCUS|HELIODENT)\b/i
+  ];
+  const manufacturers = [
+    ["Vatech", /\bVATECH\b/i],
+    ["A-dec", /\bA[- ]?DEC\b/i],
+    ["Dürr", /\bD[ÜU]RR|\bDUERR\b/i],
+    ["Ekom", /\bEKOM\b/i],
+    ["EMS", /\bEMS\b/i],
+    ["NSK", /\bNSK\b/i],
+    ["3M", /\b3M\b/i],
+    ["W&H", /\bW\s*&\s*H\b/i],
+    ["Sirona", /\bSIRONA\b/i],
+    ["Planmeca", /\bPLANMECA\b/i]
+  ];
+
+  const serial = serialPatterns.map((pattern) => text.match(pattern)?.[1]).find(Boolean)
+    || text.match(/\b[A-Z0-9]{2,}[-/][A-Z0-9][A-Z0-9\-/.]{3,}\b/i)?.[0]
+    || text.match(/\b\d{6,}[-/]\d{3,}\b/)?.[0]
+    || "";
+  const model = modelPatterns.map((pattern) => text.match(pattern)?.[1]).find(Boolean) || "";
+  const brand = manufacturers.find(([, pattern]) => pattern.test(text))?.[0] || "";
+
+  return {
+    raw,
+    serial: cleanImportedValue(serial).replace(/[;,]$/, ""),
+    model: cleanImportedValue(model).replace(/[;,]$/, ""),
+    brand
+  };
+}
+
+function applyDeviceLabelToForm(form, parsed) {
+  const applied = [];
+  const setField = (name, value, overwrite = false) => {
+    const field = qs(`[name='${name}']`, form);
+    if (!field || !value) return;
+    if (!overwrite && field.value.trim()) return;
+    field.value = value;
+    field.dispatchEvent(new Event("input", { bubbles: true }));
+    applied.push(name);
+  };
+
+  setField("serial", parsed.serial, true);
+  setField("brand", parsed.brand);
+  setField("model", parsed.model);
+  return applied;
+}
+
+function initDeviceLabelScanner(form) {
+  const button = qs("[data-scan-device-label]", form);
+  const result = qs("[data-label-scan-result]", form);
+  const fileInput = qs("[name='labelPhotoFile']", form);
+  if (!button || !result || !fileInput) return;
+
+  button.addEventListener("click", async () => {
+    const file = fileInput.files?.[0];
+    button.disabled = true;
+    result.textContent = "Čítam štítok...";
+    try {
+      const raw = await decodeDeviceLabelImage(file);
+      const parsed = parseDeviceLabelText(raw);
+      const applied = applyDeviceLabelToForm(form, parsed);
+      const found = [
+        parsed.serial ? `SN ${parsed.serial}` : "",
+        parsed.brand ? `značka ${parsed.brand}` : "",
+        parsed.model ? `model ${parsed.model}` : ""
+      ].filter(Boolean);
+      result.textContent = found.length
+        ? `Načítané: ${found.join(", ")}. Skontrolujte údaje pred uložením.`
+        : `Kód sa načítal, ale údaje neboli v známom formáte: ${raw.slice(0, 120)}`;
+      if (!applied.length && found.length) result.textContent += " Polia už boli vyplnené, preto sa neprepísali.";
+    } catch (error) {
+      result.textContent = error.message;
+    } finally {
+      button.disabled = false;
+    }
+  });
+}
+
 function closeCurrentModal(form) {
   form.closest(".modal-backdrop").remove();
 }
@@ -5014,6 +5137,7 @@ async function saveDevice(event) {
   const invoiceFile = await fileToDataUrl(invoiceFileObject);
   const invoiceIssuedInput = qs("[name='invoiceIssued']", form);
   delete values.photoFile;
+  delete values.labelPhotoFile;
   delete values.invoiceFile;
   const documents = (values.documentsText || "")
     .split(/\r?\n/)
