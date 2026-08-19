@@ -3783,7 +3783,7 @@ function openDeviceForm(id = "", presetClientId = "") {
           <input name="labelPhotoFile" type="file" accept="image/*" capture="environment">
         </label>
         <button class="secondary-action" type="button" data-scan-device-label>Načítať údaje</button>
-        <p class="form-note full" data-label-scan-result>Funguje pre QR alebo čiarový kód na štítku. Po načítaní údaje skontrolujte.</p>
+        <p class="form-note full" data-label-scan-result>Najprv sa číta QR/čiarový kód, potom podľa potreby text zo štítku. Po načítaní údaje skontrolujte.</p>
       </fieldset>
       ${input("location", "Umiestnenie", "RTG miestnosť", "text", device.location, false)}
       ${input("installed", "Dátum inštalácie", "", "date", device.installed, false)}
@@ -4907,34 +4907,110 @@ async function barcodeDetectorFormats() {
   return preferred.filter((format) => supported.includes(format));
 }
 
-async function decodeDeviceLabelImage(file) {
-  if (!file?.size) throw new Error("Najprv vyberte alebo odfoťte štítok.");
+let tesseractLoaderPromise = null;
+
+function loadTesseractOcr() {
+  if (window.Tesseract) return Promise.resolve(window.Tesseract);
+  if (tesseractLoaderPromise) return tesseractLoaderPromise;
+  tesseractLoaderPromise = new Promise((resolve, reject) => {
+    const script = document.createElement("script");
+    script.src = "https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js";
+    script.async = true;
+    script.addEventListener("load", () => resolve(window.Tesseract));
+    script.addEventListener("error", () => reject(new Error("OCR knižnicu sa nepodarilo načítať. Skúste to znova pri stabilnom internete.")));
+    document.head.appendChild(script);
+  });
+  return tesseractLoaderPromise;
+}
+
+async function detectBarcodeText(file) {
   if (!("BarcodeDetector" in window)) {
-    throw new Error("Tento prehliadač nevie čítať QR/čiarové kódy z fotografie. Údaje dopíšte ručne alebo skúste Chrome/Edge na Androide.");
+    return "";
   }
   const formats = await barcodeDetectorFormats();
   const detector = new BarcodeDetector(formats.length ? { formats } : undefined);
   const bitmap = await createImageBitmap(file);
   try {
     const codes = await detector.detect(bitmap);
-    const values = codes.map((code) => code.rawValue).filter(Boolean);
-    if (!values.length) throw new Error("Na fotke sa nepodarilo nájsť čitateľný QR alebo čiarový kód.");
-    return values.join("\n");
+    return codes.map((code) => code.rawValue).filter(Boolean).join("\n");
   } finally {
     bitmap.close?.();
   }
 }
 
+async function detectOcrText(file, onStatus) {
+  onStatus?.("Kód nestačil, čítam text zo štítku...");
+  const Tesseract = await loadTesseractOcr();
+  const result = await Tesseract.recognize(file, "eng", {
+    logger: (message) => {
+      if (message.status === "recognizing text" && Number.isFinite(message.progress)) {
+        onStatus?.(`Čítam text zo štítku... ${Math.round(message.progress * 100)} %`);
+      }
+    }
+  });
+  return result?.data?.text || "";
+}
+
+function hasUsefulDeviceLabelData(parsed) {
+  return Boolean(parsed.serial || parsed.model || parsed.brand);
+}
+
+async function decodeDeviceLabelImage(file, onStatus) {
+  if (!file?.size) throw new Error("Najprv vyberte alebo odfoťte štítok.");
+  let barcodeText = "";
+  try {
+    onStatus?.("Čítam QR/čiarový kód...");
+    barcodeText = await detectBarcodeText(file);
+    if (hasUsefulDeviceLabelData(parseDeviceLabelText(barcodeText))) {
+      return { raw: barcodeText, source: "QR/čiarový kód" };
+    }
+  } catch {
+    barcodeText = "";
+  }
+
+  const ocrText = await detectOcrText(file, onStatus);
+  const raw = [barcodeText, ocrText].filter(Boolean).join("\n").trim();
+  if (!raw) throw new Error("Na fotke sa nepodarilo nájsť čitateľný kód ani text.");
+  return { raw, source: barcodeText ? "QR/čiarový kód + OCR" : "OCR" };
+}
+
+function normalizeSerialCandidate(value = "") {
+  return cleanImportedValue(value)
+    .replace(/[–—]/g, "-")
+    .replace(/\s*-\s*/g, "-")
+    .replace(/\s*\/\s*/g, "/")
+    .replace(/^[^A-Z0-9]+|[^A-Z0-9]+$/gi, "");
+}
+
+function firstRegexMatch(text, patterns) {
+  return patterns.map((pattern) => text.match(pattern)?.[1]).find(Boolean) || "";
+}
+
+function firstLineValue(lines, labels) {
+  for (let index = 0; index < lines.length; index += 1) {
+    const line = lines[index];
+    const label = labels.find((entry) => entry.test(line));
+    if (!label) continue;
+    const withoutLabel = line.replace(label, "").replace(/^[\s:.-]+/, "").trim();
+    if (withoutLabel) return withoutLabel;
+    const nextLine = lines[index + 1]?.trim();
+    if (nextLine && !/^(ref|sn|s\/n|model|date|country|contents|sap code)$/i.test(nextLine)) return nextLine;
+  }
+  return "";
+}
+
 function parseDeviceLabelText(rawText = "") {
   const raw = String(rawText || "").trim();
   const text = raw.replace(/\s+/g, " ");
+  const lines = raw.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
   const serialPatterns = [
-    /\b(?:S\/N|SN|SERIAL|SERIAL NO\.?|SER\.?\s*NO\.?|VYROBNE CISLO|VÝROBNÉ ČÍSLO|SERIOVE CISLO|SÉRIOVÉ ČÍSLO)\s*[:#-]?\s*([A-Z0-9][A-Z0-9\-/.]{3,})\b/i,
-    /\b(?:SN|S\/N)\s*([A-Z0-9][A-Z0-9\-/.]{3,})\b/i
+    /\b(?:S\/N|SN|SERIAL|SERIAL NO\.?|SER\.?\s*NO\.?|VYROBNE CISLO|VÝROBNÉ ČÍSLO|SERIOVE CISLO|SÉRIOVÉ ČÍSLO)\s*[:#-]?\s*([A-Z0-9][A-Z0-9\s\-/.]{3,})\b/i,
+    /\(21\)\s*([A-Z0-9][A-Z0-9\s\-/.]{3,})\b/i,
+    /\b(?:SN|S\/N)\s*([A-Z0-9][A-Z0-9\s\-/.]{3,})\b/i
   ];
   const modelPatterns = [
     /\b(?:MODEL|MOD\.?|TYP|TYPE)\s*[:#-]?\s*([A-Z0-9][A-Z0-9\-/. ]{2,40})\b/i,
-    /\b(PAX[- ]?I?3D|GREEN X|VEX\d+[A-Z0-9-]*|VISTASCAN|ORTHOPHOS|PRIMOS|FOCUS|HELIODENT)\b/i
+    /\b(PAX[- ]?I?3D|GREEN X|VEX\s*[-–]\s*S?\d+[A-Z0-9-]*|VISTASCAN|ORTHOPHOS|PRIMOS|FOCUS|HELIODENT|DK50\s*2V\/M|EZRAY AIR WALL)\b/i
   ];
   const manufacturers = [
     ["Vatech", /\bVATECH\b/i],
@@ -4949,18 +5025,41 @@ function parseDeviceLabelText(rawText = "") {
     ["Planmeca", /\bPLANMECA\b/i]
   ];
 
-  const serial = serialPatterns.map((pattern) => text.match(pattern)?.[1]).find(Boolean)
+  const brand = manufacturers.find(([, pattern]) => pattern.test(text))?.[0] || "";
+  const serialFromLine = firstLineValue(lines, [/^(?:sn|s\/n|serial|serial no\.?)\b/i]);
+  const serial = normalizeSerialCandidate(serialFromLine
+    || firstRegexMatch(text, serialPatterns)
     || text.match(/\b[A-Z0-9]{2,}[-/][A-Z0-9][A-Z0-9\-/.]{3,}\b/i)?.[0]
     || text.match(/\b\d{6,}[-/]\d{3,}\b/)?.[0]
-    || "";
-  const model = modelPatterns.map((pattern) => text.match(pattern)?.[1]).find(Boolean) || "";
-  const brand = manufacturers.find(([, pattern]) => pattern.test(text))?.[0] || "";
+    || "");
+  const productName = cleanImportedValue(firstLineValue(lines, [/^product\s*name\b/i, /^výrobok\b/i]));
+  const modelFromLine = cleanImportedValue(firstLineValue(lines, [/^model\b/i, /^typ\b/i]));
+  const modelCode = modelFromLine || cleanImportedValue(firstRegexMatch(text, modelPatterns));
+  const ref = normalizeSerialCandidate(firstLineValue(lines, [/^ref\b/i]));
+  const adecDescription = lines.find((line) => /\bStool\b/i.test(line) || /\bDoctors\b/i.test(line)) || "";
+  const ekomDescription = lines.find((line) => /\bKompresor\b/i.test(line) || /\bDK50\b/i.test(line)) || "";
+  const dottedAdecCode = text.match(/\b\d{2}\.\d{4}\.\d{2}\b/)?.[0] || "";
+  const type = brand === "Ekom" && /kompresor|dk50/i.test(text)
+    ? "Kompresor"
+    : brand === "Vatech" && /ezray|vex|rtg|x-ray/i.test(text)
+      ? "RTG"
+      : brand === "A-dec" && /stool/i.test(text)
+        ? "Stolička"
+        : "";
+  const model = brand === "Vatech"
+    ? [productName, modelCode].filter(Boolean).join(" / ")
+    : brand === "Ekom"
+      ? ekomDescription || modelCode
+      : brand === "A-dec"
+        ? adecDescription || dottedAdecCode || ref || modelCode
+        : productName || modelCode || dottedAdecCode || ref;
 
   return {
     raw,
-    serial: cleanImportedValue(serial).replace(/[;,]$/, ""),
+    serial: serial.replace(/[;,]$/, ""),
     model: cleanImportedValue(model).replace(/[;,]$/, ""),
-    brand
+    brand,
+    type
   };
 }
 
@@ -4978,6 +5077,7 @@ function applyDeviceLabelToForm(form, parsed) {
   setField("serial", parsed.serial, true);
   setField("brand", parsed.brand);
   setField("model", parsed.model);
+  setField("type", parsed.type);
   return applied;
 }
 
@@ -4992,17 +5092,21 @@ function initDeviceLabelScanner(form) {
     button.disabled = true;
     result.textContent = "Čítam štítok...";
     try {
-      const raw = await decodeDeviceLabelImage(file);
+      const decoded = await decodeDeviceLabelImage(file, (message) => {
+        result.textContent = message;
+      });
+      const raw = decoded.raw;
       const parsed = parseDeviceLabelText(raw);
       const applied = applyDeviceLabelToForm(form, parsed);
       const found = [
         parsed.serial ? `SN ${parsed.serial}` : "",
         parsed.brand ? `značka ${parsed.brand}` : "",
-        parsed.model ? `model ${parsed.model}` : ""
+        parsed.model ? `model ${parsed.model}` : "",
+        parsed.type ? `typ ${parsed.type}` : ""
       ].filter(Boolean);
       result.textContent = found.length
-        ? `Načítané: ${found.join(", ")}. Skontrolujte údaje pred uložením.`
-        : `Kód sa načítal, ale údaje neboli v známom formáte: ${raw.slice(0, 120)}`;
+        ? `Načítané cez ${decoded.source}: ${found.join(", ")}. Skontrolujte údaje pred uložením.`
+        : `Štítok sa načítal, ale údaje neboli v známom formáte: ${raw.slice(0, 120)}`;
       if (!applied.length && found.length) result.textContent += " Polia už boli vyplnené, preto sa neprepísali.";
     } catch (error) {
       result.textContent = error.message;
