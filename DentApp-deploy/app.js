@@ -4938,15 +4938,44 @@ async function detectBarcodeText(file) {
   }
 }
 
+async function prepareOcrImage(file) {
+  const bitmap = await createImageBitmap(file);
+  const maxSide = 1900;
+  const scale = Math.min(1, maxSide / Math.max(bitmap.width, bitmap.height));
+  const canvas = document.createElement("canvas");
+  canvas.width = Math.max(1, Math.round(bitmap.width * scale));
+  canvas.height = Math.max(1, Math.round(bitmap.height * scale));
+  const context = canvas.getContext("2d", { willReadFrequently: true });
+  context.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
+  bitmap.close?.();
+
+  const image = context.getImageData(0, 0, canvas.width, canvas.height);
+  const data = image.data;
+  for (let index = 0; index < data.length; index += 4) {
+    const luminance = data[index] * 0.299 + data[index + 1] * 0.587 + data[index + 2] * 0.114;
+    const boosted = Math.max(0, Math.min(255, (luminance - 128) * 1.75 + 150));
+    const value = boosted > 238 ? 255 : boosted < 35 ? 0 : boosted;
+    data[index] = value;
+    data[index + 1] = value;
+    data[index + 2] = value;
+  }
+  context.putImageData(image, 0, 0);
+  return canvas;
+}
+
 async function detectOcrText(file, onStatus) {
-  onStatus?.("Kód nestačil, čítam text zo štítku...");
+  onStatus?.("Kód nestačil, upravujem fotku pre OCR...");
+  const ocrImage = await prepareOcrImage(file);
+  onStatus?.("Čítam text zo štítku...");
   const Tesseract = await loadTesseractOcr();
-  const result = await Tesseract.recognize(file, "eng", {
+  const result = await Tesseract.recognize(ocrImage, "eng", {
     logger: (message) => {
       if (message.status === "recognizing text" && Number.isFinite(message.progress)) {
         onStatus?.(`Čítam text zo štítku... ${Math.round(message.progress * 100)} %`);
       }
-    }
+    },
+    tessedit_pageseg_mode: "6",
+    preserve_interword_spaces: "1"
   });
   return result?.data?.text || "";
 }
@@ -5001,6 +5030,37 @@ function firstPlausibleSerial(...values) {
 
 function firstRegexMatch(text, patterns) {
   return patterns.map((pattern) => text.match(pattern)?.[1]).find(Boolean) || "";
+}
+
+function inferDeviceBrandFromText(text = "") {
+  if (/\bA[-\s]?DEC\b|65[.,]\s*1940[.,]\s*78|\b\d{2}L\s*\d{3}\s*[-/]\s*A\d{3,6}\b|\b\d{3}\s*[-/]\s*A\d{3,6}\b/i.test(text)) return "A-dec";
+  if (/\bEKOM\b|\bDK50\b|\bKOMPRESOR\b|\bV\d{4,}\s*[-/]\s*\d{2}\s*[-/]\s*\d{4}\b/i.test(text)) return "Ekom";
+  if (/\bVATECH\b|\bEZRAY\b|\bVEX\s*[-–]?\s*S?\d+/i.test(text)) return "Vatech";
+  return "";
+}
+
+function extractSerialLikeCandidate(text = "") {
+  const normalized = String(text || "")
+    .toUpperCase()
+    .replace(/[–—]/g, "-")
+    .replace(/\s*[-/]\s*/g, "-")
+    .replace(/\s+/g, " ");
+  const patterns = [
+    /\b\d{2}L\d{3}-A\d{3,6}\b/i,
+    /\b\d{2}L\s*\d{3}-A\d{3,6}\b/i,
+    /\b\d{3}-A\d{3,6}\b/i,
+    /\bV\d{4,}-\d{2}-\d{4}\b/i,
+    /\b\d{3}-\d{6}\b/i,
+    /\b[A-Z0-9]{2,8}-[A-Z0-9]{4,12}(?:-[A-Z0-9]{2,8})?\b/i
+  ];
+  return patterns.map((pattern) => normalized.match(pattern)?.[0]).find(Boolean) || "";
+}
+
+function completeAdecSerialPrefix(serial = "", text = "") {
+  const candidate = normalizeSerialCandidate(serial);
+  if (!/^\d{3}-A\d{3,6}$/i.test(candidate)) return candidate;
+  const prefix = String(text || "").toUpperCase().match(/\b\d{2}L\b/)?.[0] || "";
+  return prefix ? `${prefix}${candidate}` : candidate;
 }
 
 function firstLineValue(lines, labels) {
@@ -5061,14 +5121,16 @@ function parseDeviceLabelText(rawText = "") {
     ["Planmeca", /\bPLANMECA\b/i]
   ];
 
-  const brand = manufacturers.find(([, pattern]) => pattern.test(text))?.[0] || "";
+  const brand = manufacturers.find(([, pattern]) => pattern.test(text))?.[0] || inferDeviceBrandFromText(text);
   const serialFromLine = serialLineValue(lines);
-  const serial = firstPlausibleSerial(
+  let serial = firstPlausibleSerial(
     serialFromLine,
     firstRegexMatch(text, serialPatterns),
+    extractSerialLikeCandidate(text),
     text.match(/\b[A-Z0-9]{2,}[-/][A-Z0-9][A-Z0-9\-/.]{3,}\b/i)?.[0],
     text.match(/\b\d{6,}[-/]\d{3,}\b/)?.[0]
   );
+  if (brand === "A-dec") serial = completeAdecSerialPrefix(serial, text);
   const productName = cleanImportedValue(firstLineValue(lines, [/^product\s*name\b/i, /^výrobok\b/i]));
   const modelFromLine = cleanImportedValue(firstLineValue(lines, [/^model\b/i, /^typ\b/i]));
   const modelCode = modelFromLine || cleanImportedValue(firstRegexMatch(text, modelPatterns));
@@ -5143,7 +5205,7 @@ function initDeviceLabelScanner(form) {
       ].filter(Boolean);
       result.textContent = found.length
         ? `Načítané cez ${decoded.source}: ${found.join(", ")}. Skontrolujte údaje pred uložením.`
-        : `Štítok sa načítal, ale údaje neboli v známom formáte: ${raw.slice(0, 120)}`;
+        : "Štítok sa načítal, ale nepodarilo sa spoľahlivo rozpoznať údaje. Skúste odfotiť bližšie iba biely štítok bez okolia a bez tieňa, alebo dopíšte údaje ručne.";
       if (found.length && !parsed.serial) result.textContent += " Sériové číslo sa nepodarilo spoľahlivo rozpoznať, dopíšte ho ručne.";
       if (!applied.length && found.length) result.textContent += " Polia už boli vyplnené, preto sa neprepísali.";
     } catch (error) {
