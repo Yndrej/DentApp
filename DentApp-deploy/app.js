@@ -4977,6 +4977,7 @@ async function decodeDeviceLabelImage(file, onStatus) {
 function normalizeSerialCandidate(value = "") {
   return cleanImportedValue(value)
     .replace(/[–—]/g, "-")
+    .replace(/([A-Z0-9]{2,4})\s+([A-Z0-9]{3,}[-/][A-Z0-9]{3,})/gi, "$1$2")
     .replace(/\s*-\s*/g, "-")
     .replace(/\s*\/\s*/g, "/")
     .replace(/^[^A-Z0-9]+|[^A-Z0-9]+$/gi, "");
@@ -4995,6 +4996,25 @@ function firstLineValue(lines, labels) {
     if (withoutLabel) return withoutLabel;
     const nextLine = lines[index + 1]?.trim();
     if (nextLine && !/^(ref|sn|s\/n|model|date|country|contents|sap code)$/i.test(nextLine)) return nextLine;
+  }
+  return "";
+}
+
+function serialLineValue(lines) {
+  for (let index = 0; index < lines.length; index += 1) {
+    const line = lines[index];
+    const label = /^(?:sn|s\/n|serial|serial no\.?)\b/i;
+    if (!label.test(line)) continue;
+    const current = line.replace(label, "").replace(/^[\s:.-]+/, "").trim();
+    const next = lines[index + 1]?.trim() || "";
+    if (/^[A-Z0-9]{2,4}$/i.test(current) && /^[A-Z0-9]{3,}[-/][A-Z0-9]{3,}/i.test(next)) {
+      return `${current}${next}`;
+    }
+    if (/^[A-Z0-9]{2,4}\s+[A-Z0-9]{3,}[-/][A-Z0-9]{3,}/i.test(current)) {
+      return current;
+    }
+    if (current) return current;
+    if (next && !/^(ref|sn|s\/n|model|date|country|contents|sap code)$/i.test(next)) return next;
   }
   return "";
 }
@@ -5026,7 +5046,7 @@ function parseDeviceLabelText(rawText = "") {
   ];
 
   const brand = manufacturers.find(([, pattern]) => pattern.test(text))?.[0] || "";
-  const serialFromLine = firstLineValue(lines, [/^(?:sn|s\/n|serial|serial no\.?)\b/i]);
+  const serialFromLine = serialLineValue(lines);
   const serial = normalizeSerialCandidate(serialFromLine
     || firstRegexMatch(text, serialPatterns)
     || text.match(/\b[A-Z0-9]{2,}[-/][A-Z0-9][A-Z0-9\-/.]{3,}\b/i)?.[0]
